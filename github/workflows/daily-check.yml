@@ -1,0 +1,28 @@
+name: Verificar e enviar agendamentos
+
+# Este workflow substitui o "agendador interno" que existiria num servidor
+# próprio. Ele simplesmente bate na rota /cron/check-and-send do seu app
+# hospedado no PythonAnywhere, algumas vezes ao dia. Rodar mais de uma vez
+# não causa envios duplicados — o próprio app só envia o que realmente
+# está pendente naquele dia.
+
+on:
+  schedule:
+    # Três horários por dia (fuso de Brasília) — redundância caso um dos
+    # horários seja atrasado pelo GitHub (acontece ocasionalmente, é normal).
+    - cron: "0 8 * * *"
+      timezone: "America/Sao_Paulo"
+    - cron: "0 14 * * *"
+      timezone: "America/Sao_Paulo"
+    - cron: "0 20 * * *"
+      timezone: "America/Sao_Paulo"
+  workflow_dispatch: {}   # permite rodar manualmente pela aba "Actions" do GitHub, para testar
+
+jobs:
+  chamar-check-and-send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chamar a rota de verificação
+        run: |
+          curl --fail --silent --show-error \
+            "${{ secrets.APP_URL }}/cron/check-and-send?token=${{ secrets.CRON_SECRET }}"

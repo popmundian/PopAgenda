@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Agendamentos — Painel{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-calendar3 me-2 text-primary"></i>Agendamentos</h5>
+    <small class="text-muted">Mensagens recorrentes para seus grupos do Telegram</small>
+  </div>
+  <a href="{{ url_for('novo') }}" class="btn btn-brand btn-sm px-3">
+    <i class="bi bi-plus-lg me-1"></i> Novo
+  </a>
+</div>
+
+<div class="row g-3 mb-4" id="stats-row">
+  <div class="col-6 col-md-4">
+    <div class="stat-card" style="background: linear-gradient(135deg,#229ED9,#1a7aab)">
+      <div class="stat-num" id="st-total">—</div>
+      <div class="stat-label">Total de agendamentos</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="stat-card" style="background: linear-gradient(135deg,#10b981,#059669)">
+      <div class="stat-num" id="st-ativos">—</div>
+      <div class="stat-label">Ativos agora</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-4">
+    <div class="stat-card" style="background: linear-gradient(135deg,#f59e0b,#d97706)">
+      <div class="stat-num" id="st-hoje">—</div>
+      <div class="stat-label">Enviados hoje</div>
+    </div>
+  </div>
+</div>
+
+{% if not schedules %}
+<div class="card text-center py-5">
+  <div class="card-body">
+    <i class="bi bi-calendar-x" style="font-size:3rem;color:#cbd5e0"></i>
+    <h6 class="mt-3 text-muted">Nenhum agendamento cadastrado</h6>
+    <a href="{{ url_for('novo') }}" class="btn btn-brand btn-sm mt-2">
+      <i class="bi bi-plus-lg me-1"></i> Criar primeiro agendamento
+    </a>
+  </div>
+</div>
+{% else %}
+<div class="row g-3">
+  {% for s in schedules %}
+  <div class="col-12 col-xl-6">
+    <div class="card h-100">
+      <div class="card-header d-flex align-items-center justify-content-between py-2">
+        <div class="d-flex align-items-center gap-2">
+          <span class="text-muted" style="font-size:.78rem">#{{ s.id }}</span>
+          <strong>{{ s.label or ('Agendamento ' ~ s.id) }}</strong>
+          {% if s.active %}
+            {% if s.overdue %}
+              <span class="badge badge-overdue"><i class="bi bi-clock-history me-1"></i>Pendente</span>
+            {% else %}
+              <span class="badge badge-active"><i class="bi bi-check-circle me-1"></i>Ativo</span>
+            {% endif %}
+          {% else %}
+            <span class="badge badge-paused"><i class="bi bi-pause-circle me-1"></i>Pausado</span>
+          {% endif %}
+        </div>
+        <span class="badge badge-period">
+          <i class="bi bi-arrow-repeat me-1"></i>{{ s.period_days }} dias
+        </span>
+      </div>
+      <div class="card-body py-2">
+        <div class="schedule-msg mb-2">{{ s.message }}</div>
+        <div class="row g-2" style="font-size:.8rem; color:#6b7280">
+          <div class="col-6">
+            <i class="bi bi-calendar-event me-1"></i>
+            <strong>Início:</strong> {{ s.start_display }}
+          </div>
+          <div class="col-6">
+            <i class="bi bi-calendar-check me-1"></i>
+            <strong>Fim:</strong> {{ s.end_display }}
+          </div>
+          <div class="col-6">
+            <i class="bi bi-send me-1"></i>
+            <strong>Último envio:</strong>
+            {% if s.last_sent %}
+              {{ s.last_sent | replace('-', '/') }}
+            {% else %}
+              Nunca
+            {% endif %}
+          </div>
+          <div class="col-6">
+            <i class="bi bi-arrow-right-circle me-1 {% if s.overdue %}text-warning{% else %}text-success{% endif %}"></i>
+            <strong>Próximo:</strong>
+            <span class="{% if s.overdue %}text-warning fw-bold{% endif %}">{{ s.next_display }}</span>
+          </div>
+          <div class="col-12">
+            <i class="bi bi-telegram me-1"></i>
+            <strong>Chat ID:</strong> <code>{{ s.chat_id }}</code>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer bg-white border-top d-flex gap-2 py-2">
+        <a href="{{ url_for('editar', sid=s.id) }}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-pencil"></i> Editar
+        </a>
+        <a href="{{ url_for('toggle', sid=s.id) }}" class="btn btn-sm {% if s.active %}btn-outline-warning{% else %}btn-outline-success{% endif %}">
+          {% if s.active %}
+            <i class="bi bi-pause"></i> Pausar
+          {% else %}
+            <i class="bi bi-play"></i> Ativar
+          {% endif %}
+        </a>
+        <a href="{{ url_for('log_schedule', sid=s.id) }}" class="btn btn-outline-info btn-sm">
+          <i class="bi bi-clock-history"></i> Log
+        </a>
+        <form method="POST" action="{{ url_for('remover', sid=s.id) }}" class="ms-auto"
+              onsubmit="return confirm('Remover o agendamento #{{ s.id }}? Esta ação é permanente.')">
+          <button type="submit" class="btn btn-outline-danger btn-sm">
+            <i class="bi bi-trash"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+fetch('/api/status').then(r => r.json()).then(d => {
+  document.getElementById('st-total').textContent = d.total;
+  document.getElementById('st-ativos').textContent = d.ativos;
+  document.getElementById('st-hoje').textContent = d.enviados_hoje;
+});
+</script>
+{% endblock %}
