@@ -14,7 +14,7 @@ import sys
 import os
 
 # Caminho da pasta onde está o app.py (ajuste "seuusuario" para o seu usuário)
-project_home = "/home/seuusuario/telegram_agendador"
+project_home = "/home/PopAgenda/PopAgenda"
 if project_home not in sys.path:
     sys.path.insert(0, project_home)
 

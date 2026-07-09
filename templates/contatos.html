@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Contatos{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-person-lines-fill me-2 text-primary"></i>Contatos</h5>
+    <small class="text-muted">Nomes amigáveis para os Chat IDs dos grupos e canais</small>
+  </div>
+  <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i> Voltar
+  </a>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-7">
+    <div class="card">
+      <div class="card-header">Contatos cadastrados</div>
+      {% if not contatos %}
+      <div class="card-body text-center text-muted py-4">
+        <i class="bi bi-person-x" style="font-size:2rem"></i>
+        <p class="mt-2">Nenhum contato cadastrado ainda.</p>
+      </div>
+      {% else %}
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Nome amigável</th>
+              <th>Chat ID</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in contatos %}
+            <tr>
+              <td>{{ c.friendly_name }}</td>
+              <td><code>{{ c.chat_id }}</code></td>
+              <td class="text-end">
+                <form method="POST" action="{{ url_for('contatos_remover', cid=c.id) }}" class="d-inline"
+                      onsubmit="return confirm('Remover o contato {{ c.friendly_name }}?')">
+                  <button type="submit" class="btn btn-outline-danger btn-sm">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-5">
+    <div class="card">
+      <div class="card-header">Cadastrar novo contato</div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('contatos_novo') }}">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Nome amigável</label>
+            <input type="text" name="friendly_name" class="form-control"
+                   placeholder="ex: Notificações PPM (canal)" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Chat ID</label>
+            <input type="text" name="chat_id" class="form-control" placeholder="-1001234567890" required>
+            <div class="form-text">Envie <code>/chatid</code> no grupo/canal para descobrir.</div>
+          </div>
+          <button type="submit" class="btn btn-brand w-100">
+            <i class="bi bi-plus-lg me-1"></i> Cadastrar
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

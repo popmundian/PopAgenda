@@ -93,11 +93,19 @@
           </div>
           <div class="col-12">
             <i class="bi bi-telegram me-1"></i>
-            <strong>Chat ID:</strong> <code>{{ s.chat_id }}</code>
+            <strong>Chat:</strong>
+            {% if s.friendly_name %}
+              {{ s.friendly_name }} <code class="text-muted" style="font-size:.75em">{{ s.chat_id }}</code>
+            {% else %}
+              <code>{{ s.chat_id }}</code>
+            {% endif %}
+          </div>
+          <div class="col-12 text-muted" style="font-size:.75rem">
+            <i class="bi bi-person me-1"></i>criado por {{ s.created_by or '—' }}
           </div>
         </div>
       </div>
-      <div class="card-footer bg-white border-top d-flex gap-2 py-2">
+      <div class="card-footer bg-white border-top d-flex flex-wrap gap-2 py-2">
         <a href="{{ url_for('editar', sid=s.id) }}" class="btn btn-outline-secondary btn-sm">
           <i class="bi bi-pencil"></i> Editar
         </a>
@@ -108,21 +116,55 @@
             <i class="bi bi-play"></i> Ativar
           {% endif %}
         </a>
+        <button type="button" class="btn btn-outline-primary btn-sm" onclick="abrirTeste({{ s.id }})">
+          <i class="bi bi-send-check"></i> Testar
+        </button>
         <a href="{{ url_for('log_schedule', sid=s.id) }}" class="btn btn-outline-info btn-sm">
           <i class="bi bi-clock-history"></i> Log
         </a>
+        {% if is_admin %}
         <form method="POST" action="{{ url_for('remover', sid=s.id) }}" class="ms-auto"
               onsubmit="return confirm('Remover o agendamento #{{ s.id }}? Esta ação é permanente.')">
           <button type="submit" class="btn btn-outline-danger btn-sm">
             <i class="bi bi-trash"></i>
           </button>
         </form>
+        {% endif %}
       </div>
     </div>
   </div>
   {% endfor %}
 </div>
 {% endif %}
+
+<!-- Modal de confirmação para envio de teste -->
+<div class="modal fade" id="testModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" id="testForm">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-send-check text-primary me-2"></i>Enviar mensagem de teste</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small mb-3">
+            Isso envia a mensagem real para o grupo/canal agora mesmo, marcada
+            com <code>🧪 [TESTE]</code> no início. Não afeta o agendamento nem
+            conta como o envio recorrente.
+          </p>
+          <label class="form-label fw-semibold">Confirme sua senha para continuar</label>
+          <input type="password" name="password" class="form-control" required autocomplete="current-password">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-brand">
+            <i class="bi bi-send-check me-1"></i> Enviar teste
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -132,5 +174,10 @@ fetch('/api/status').then(r => r.json()).then(d => {
   document.getElementById('st-ativos').textContent = d.ativos;
   document.getElementById('st-hoje').textContent = d.enviados_hoje;
 });
+
+function abrirTeste(id) {
+  document.getElementById('testForm').action = '/testar/' + id;
+  new bootstrap.Modal(document.getElementById('testModal')).show();
+}
 </script>
 {% endblock %}

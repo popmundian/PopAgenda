@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Usuários — Administração{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <div>
+    <h5 class="mb-0 fw-bold"><i class="bi bi-people me-2 text-primary"></i>Usuários</h5>
+    <small class="text-muted">Gerencie quem tem acesso ao painel</small>
+  </div>
+  <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i> Voltar
+  </a>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-7">
+    <div class="card">
+      <div class="card-header">Usuários cadastrados</div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Usuário</th>
+              <th>Papel</th>
+              <th>Criado em</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in usuarios %}
+            <tr>
+              <td>{{ u.username }}</td>
+              <td>
+                {% if u.role == 'admin' %}
+                  <span class="badge bg-primary">admin</span>
+                {% else %}
+                  <span class="badge bg-secondary">usuário</span>
+                {% endif %}
+              </td>
+              <td><small class="text-muted">{{ u.created_at[:10] }}</small></td>
+              <td class="text-end">
+                <button type="button" class="btn btn-outline-secondary btn-sm"
+                        onclick="abrirReset({{ u.id }}, '{{ u.username }}')">
+                  <i class="bi bi-key"></i>
+                </button>
+                <form method="POST" action="{{ url_for('usuarios_remover', uid=u.id) }}" class="d-inline"
+                      onsubmit="return confirm('Remover o usuário {{ u.username }}?')">
+                  <button type="submit" class="btn btn-outline-danger btn-sm">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-5">
+    <div class="card">
+      <div class="card-header">Criar novo usuário</div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('usuarios_novo') }}">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Nome de usuário</label>
+            <input type="text" name="username" class="form-control" required autocomplete="off">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Senha</label>
+            <input type="password" name="password" class="form-control" minlength="6" required
+                   autocomplete="new-password">
+            <div class="form-text">Mínimo 6 caracteres.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Papel</label>
+            <select name="role" class="form-select">
+              <option value="user" selected>Usuário — cria, edita e pausa agendamentos</option>
+              <option value="admin">Administrador — também pode apagar e gerenciar usuários</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-brand w-100">
+            <i class="bi bi-person-plus me-1"></i> Criar usuário
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de reset de senha -->
+<div class="modal fade" id="resetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" id="resetForm">
+        <div class="modal-header">
+          <h5 class="modal-title">Redefinir senha de <span id="resetUserLabel"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label fw-semibold">Nova senha</label>
+          <input type="password" name="password" class="form-control" minlength="6" required>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-brand">Redefinir</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function abrirReset(id, username) {
+  document.getElementById('resetForm').action = '/usuarios/resetar/' + id;
+  document.getElementById('resetUserLabel').textContent = username;
+  new bootstrap.Modal(document.getElementById('resetModal')).show();
+}
+</script>
+{% endblock %}

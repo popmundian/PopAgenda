@@ -32,15 +32,24 @@
             </div>
             <div class="col-md-6">
               <label class="form-label fw-semibold">
-                Chat ID do grupo <span class="text-danger">*</span>
+                Chat (grupo/canal) <span class="text-danger">*</span>
               </label>
-              <input type="text" name="chat_id" class="form-control"
-                     placeholder="-1001234567890"
+              {% if action != 'editar' %}
+              <select id="contact_picker" class="form-select mb-2" onchange="document.getElementById('chat_id').value = this.value">
+                <option value="">— escolher um contato salvo —</option>
+                {% for c in contacts %}
+                <option value="{{ c.chat_id }}">{{ c.friendly_name }} ({{ c.chat_id }})</option>
+                {% endfor %}
+              </select>
+              {% endif %}
+              <input type="text" name="chat_id" id="chat_id" class="form-control"
+                     placeholder="ou digite/cole o Chat ID: -1001234567890"
                      value="{{ data.get('chat_id', '') }}"
                      {% if action == 'editar' %}readonly{% endif %} required>
               <div class="form-text">
                 {% if action != 'editar' %}
-                  Envie <code>/chatid</code> no grupo para descobrir.
+                  Sem o Chat ID ainda? Envie <code>/chatid</code> no grupo, ou
+                  cadastre em <a href="{{ url_for('contatos') }}" target="_blank">Contatos</a>.
                 {% endif %}
               </div>
             </div>

@@ -1,1 +1,17 @@
+# Segredos
 .env
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Banco de dados
+*.db
+*.db-journal
+
+# Editores
+.vscode/
+.idea/
+.DS_Store

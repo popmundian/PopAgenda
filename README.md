@@ -19,7 +19,48 @@ Pesquisei as opções atuais antes de recomendar. Resumo:
 
 ---
 
-## O que mudou por baixo do capô
+## 🆕 Atualização v3 — usuários com permissões, contatos e teste de envio
+
+Se seu app já está no ar (PythonAnywhere), essa atualização é **não-destrutiva**:
+seus agendamentos atuais continuam intactos. O que muda:
+
+- **Múltiplos usuários com dois papéis**: `admin` e `user`
+- **Sua conta atual (WEB_USER/WEB_PASS do .env) vira automaticamente o primeiro admin** na primeira vez que o app reiniciar com o código novo — você não perde acesso
+- **Contatos**: cadastre nomes amigáveis para Chat IDs (ex: "Notificações PPM" em vez de decorar `5402433549`)
+- **Botão de teste**: envia a mensagem agora mesmo, marcada como `🧪 [TESTE]`, exige sua senha antes de enviar
+
+### Tabela de permissões
+
+| Ação | Usuário comum | Admin |
+|---|---|---|
+| Criar / editar agendamento | ✅ | ✅ |
+| Pausar / ativar agendamento | ✅ | ✅ |
+| Enviar teste (com senha) | ✅ | ✅ |
+| Cadastrar contatos | ✅ | ✅ |
+| **Apagar agendamento** | ❌ | ✅ |
+| Gerenciar usuários | ❌ | ✅ |
+
+### Como aplicar essa atualização no que já está no ar
+
+1. Suba os arquivos atualizados no seu repositório GitHub (upload manual, ou
+   `git add . && git commit -m "v3" && git push` se estiver usando Git local)
+2. No console Bash do PythonAnywhere:
+   ```bash
+   cd PopAgenda
+   git pull
+   ```
+   (Não precisa `pip install` de novo — nenhuma dependência nova foi adicionada)
+3. Aba **Web** → botão **Reload**
+4. Pronto — faça login normalmente com seu usuário/senha de sempre. Ele agora é o admin.
+
+### Criando outros usuários
+
+Como admin, vá em **Usuários** no menu lateral → preencha nome, senha (mínimo
+6 caracteres) e escolha o papel. Cada colaborador loga com sua própria conta.
+
+---
+
+## O que mudou por baixo do capô (versão GitHub + PythonAnywhere)
 
 - O bot agora usa **webhook** em vez de "polling": o Telegram chama seu app
   diretamente quando alguém manda `/chatid` ou `/status`, em vez do app ficar
@@ -211,10 +252,17 @@ processo — ele fica de fora do controle de versão de propósito (veja o
 
 ---
 
-## 📌 Possíveis melhorias futuras (a pedido)
+## 📌 Roteiro — o que falta das suas ideias originais
 
-- Login individual por colaborador
-- Alerta automático (por Telegram) se um envio falhar
-- Domínio próprio (PythonAnywhere permite em planos pagos)
+Já entregue nesta atualização (v3): usuários com permissões, contatos com
+nome amigável, botão de teste com senha.
 
-Se algum desses fizer sentido pra você, é só pedir.
+Ainda por vir, na ordem que pretendo seguir:
+
+1. **Log de auditoria completo** — quem logou, criou, editou; alerta para um
+   chat do Telegram do admin quando algo falha
+2. **Categorias** para organizar as agendas + **emoji único por evento**
+3. **Eventos sem data definida** — salvar como rascunho para ativar depois
+4. **Visão de calendário** — panorama do que está agendado
+
+Me avisa se quiser mudar essa ordem ou prioridade.

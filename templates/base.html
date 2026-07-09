@@ -84,9 +84,23 @@
     <a href="{{ url_for('novo') }}" class="nav-link {% if request.endpoint == 'novo' %}active{% endif %}">
       <i class="bi bi-plus-circle"></i> Novo agendamento
     </a>
+    <a href="{{ url_for('contatos') }}" class="nav-link {% if request.endpoint == 'contatos' %}active{% endif %}">
+      <i class="bi bi-person-lines-fill"></i> Contatos
+    </a>
+    {% if is_admin %}
+    <div class="nav-label">Administração</div>
+    <a href="{{ url_for('usuarios') }}" class="nav-link {% if request.endpoint == 'usuarios' %}active{% endif %}">
+      <i class="bi bi-people"></i> Usuários
+    </a>
+    {% endif %}
   </nav>
   <div class="sidebar-footer">
-    <i class="bi bi-person-circle"></i> {{ user }}<br>
+    <i class="bi bi-person-circle"></i> {{ user }}
+    {% if is_admin %}<span class="badge bg-primary" style="font-size:.65rem">admin</span>{% endif %}
+    <br>
+    <a href="{{ url_for('minha_conta') }}" class="text-secondary text-decoration-none">
+      <i class="bi bi-key"></i> Minha conta
+    </a><br>
     <a href="{{ url_for('logout') }}" class="text-secondary text-decoration-none">
       <i class="bi bi-box-arrow-left"></i> Sair
     </a>
