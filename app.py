@@ -9,7 +9,7 @@ import os
 import logging
 import sqlite3
 import secrets
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time as dtime, timedelta
 from zoneinfo import ZoneInfo
 from functools import wraps
 
@@ -30,6 +30,11 @@ DB_PATH         = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.absp
 SECRET_KEY      = os.getenv("SECRET_KEY", secrets.token_hex(32))
 CRON_SECRET     = os.getenv("CRON_SECRET", "")
 WEBHOOK_SECRET  = os.getenv("WEBHOOK_SECRET", "")
+
+# Chat (pessoal ou de grupo) do Telegram que recebe alertas de falha de
+# envio. Opcional — se vazio, os alertas simplesmente não são enviados
+# (mas continuam registrados no log de auditoria normalmente).
+ADMIN_CHAT_ID   = os.getenv("ADMIN_CHAT_ID", "")
 
 # Usados SÓ para criar a primeira conta admin, na primeira vez que o app
 # roda (banco vazio). Depois disso, gerenciamento de usuário é todo feito
@@ -69,6 +74,7 @@ def init_db():
                 period_days INTEGER NOT NULL,
                 start_date  TEXT    NOT NULL,
                 end_date    TEXT,
+                send_time   TEXT    NOT NULL DEFAULT '08:00',
                 last_sent   TEXT,
                 active      INTEGER NOT NULL DEFAULT 1,
                 created_by  TEXT,
@@ -102,7 +108,24 @@ def init_db():
                 created_at    TEXT NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                actor     TEXT,
+                action    TEXT NOT NULL,
+                details   TEXT
+            )
+        """)
         conn.commit()
+
+        # Migração: quem já tinha o banco criado antes desta atualização não
+        # tem a coluna send_time — adiciona agora, sem apagar nada existente.
+        cols = [c[1] for c in conn.execute("PRAGMA table_info(schedules)").fetchall()]
+        if "send_time" not in cols:
+            conn.execute("ALTER TABLE schedules ADD COLUMN send_time TEXT NOT NULL DEFAULT '08:00'")
+            conn.commit()
+            logger.info("Migração aplicada: coluna send_time adicionada.")
 
         # Semeia a primeira conta admin — só roda se AINDA não existir
         # nenhum usuário na tabela (ou seja, só na primeira execução).
@@ -147,6 +170,14 @@ def next_occurrence(start: date, period: int, last_sent) -> date:
     return n
 
 
+def parse_time_str(s) -> dtime:
+    try:
+        h, m = str(s).split(":")
+        return dtime(int(h), int(m))
+    except (ValueError, AttributeError):
+        return dtime(8, 0)
+
+
 def enrich(row):
     d = dict(row)
     start = date.fromisoformat(d["start_date"])
@@ -155,7 +186,14 @@ def enrich(row):
     today = hoje()
     d["next_date"]    = prox.isoformat()
     d["next_display"] = prox.strftime("%d/%m/%Y")
-    d["overdue"]       = prox <= today and d["active"]
+    d["send_time"]     = d.get("send_time") or "08:00"
+    # "atrasado" agora também considera o horário: só fica pendente de
+    # verdade se a data já chegou E o horário marcado já passou (ou se a
+    # data já é passada há mais de um dia, aí não faz sentido esperar).
+    agora = datetime.now(TZ).time()
+    horario_alvo = parse_time_str(d["send_time"])
+    pendente_hoje = prox == today and agora >= horario_alvo
+    d["overdue"]       = (prox < today or pendente_hoje) and d["active"]
     d["end_display"]   = date.fromisoformat(d["end_date"]).strftime("%d/%m/%Y") if d["end_date"] else "—"
     d["start_display"] = start.strftime("%d/%m/%Y")
     return d
@@ -182,6 +220,24 @@ def enviar_telegram(chat_id: str, texto: str) -> tuple[bool, str]:
         return False, resp.text[:300]
     except requests.RequestException as exc:
         return False, str(exc)[:300]
+
+
+def alertar_admin(texto: str):
+    """Envia um aviso para o chat do admin no Telegram, se configurado.
+    Usado hoje só para falhas de envio (as que mais precisam de atenção
+    imediata) — dá pra ampliar depois se fizer sentido."""
+    if ADMIN_CHAT_ID:
+        enviar_telegram(ADMIN_CHAT_ID, f"🔔 *PopAgenda*\n{texto}")
+
+
+def registrar_auditoria(action: str, details: str = "", actor: str = None):
+    actor = actor or session.get("username", "sistema")
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO audit_log (timestamp, actor, action, details) VALUES (?,?,?,?)",
+            (datetime.now(TZ).isoformat(), actor, action, details)
+        )
+        conn.commit()
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
@@ -218,7 +274,9 @@ def login():
             session["user_id"]   = row["id"]
             session["username"]  = row["username"]
             session["role"]      = row["role"]
+            registrar_auditoria("login", "login bem-sucedido", actor=u)
             return redirect(url_for("index"))
+        registrar_auditoria("login_falhou", f"tentativa com usuário '{u}'", actor=u or "desconhecido")
         flash("Usuário ou senha incorretos.", "danger")
     return render_template("login.html")
 
@@ -246,6 +304,7 @@ def minha_conta():
                 conn.execute("UPDATE users SET password_hash=? WHERE id=?",
                              (generate_password_hash(nova), session["user_id"]))
                 conn.commit()
+            registrar_auditoria("trocar_senha", "usuário trocou a própria senha")
             flash("Senha alterada com sucesso! ✅", "success")
             return redirect(url_for("index"))
     return render_template("conta.html", user=session.get("username"),
@@ -279,6 +338,7 @@ def usuarios_novo():
                 (username, generate_password_hash(password), role, datetime.now(TZ).isoformat())
             )
             conn.commit()
+        registrar_auditoria("criar_usuario", f"'{username}' como {role}")
         flash(f"Usuário '{username}' criado como {role}. ✅", "success")
     except sqlite3.IntegrityError:
         flash("Já existe um usuário com esse nome.", "danger")
@@ -296,6 +356,7 @@ def usuarios_resetar(uid):
         conn.execute("UPDATE users SET password_hash=? WHERE id=?",
                      (generate_password_hash(nova_senha), uid))
         conn.commit()
+    registrar_auditoria("resetar_senha", f"senha de user_id={uid} redefinida pelo admin")
     flash("Senha redefinida com sucesso.", "success")
     return redirect(url_for("usuarios"))
 
@@ -307,7 +368,7 @@ def usuarios_remover(uid):
         flash("Você não pode remover a própria conta.", "danger")
         return redirect(url_for("usuarios"))
     with get_conn() as conn:
-        row = conn.execute("SELECT role FROM users WHERE id=?", (uid,)).fetchone()
+        row = conn.execute("SELECT role, username FROM users WHERE id=?", (uid,)).fetchone()
         if row and row["role"] == "admin":
             total_admins = conn.execute("SELECT COUNT(*) FROM users WHERE role='admin'").fetchone()[0]
             if total_admins <= 1:
@@ -315,8 +376,25 @@ def usuarios_remover(uid):
                 return redirect(url_for("usuarios"))
         conn.execute("DELETE FROM users WHERE id=?", (uid,))
         conn.commit()
+    registrar_auditoria("remover_usuario", f"'{row['username'] if row else uid}' removido")
     flash("Usuário removido.", "warning")
     return redirect(url_for("usuarios"))
+
+
+@app.route("/auditoria")
+@admin_required
+def auditoria():
+    filtro = request.args.get("acao", "")
+    with get_conn() as conn:
+        if filtro:
+            rows = conn.execute(
+                "SELECT * FROM audit_log WHERE action=? ORDER BY id DESC LIMIT 300", (filtro,)
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 300").fetchall()
+        acoes = conn.execute("SELECT DISTINCT action FROM audit_log ORDER BY action").fetchall()
+    return render_template("auditoria.html", logs=rows, acoes=[a["action"] for a in acoes],
+                           filtro=filtro, user=session.get("username"), is_admin=True)
 
 
 # ── Contatos (nomes amigáveis para Chat IDs) ─────────────────────────────────
@@ -388,6 +466,7 @@ def novo():
         period_str  = request.form.get("period_days", "").strip()
         start_str   = request.form.get("start_date", "").strip()
         end_str     = request.form.get("end_date", "").strip()
+        send_time   = request.form.get("send_time", "").strip() or "08:00"
         message     = request.form.get("message", "").strip()
 
         errors = []
@@ -412,18 +491,20 @@ def novo():
                                    is_admin=(session.get("role") == "admin"))
 
         with get_conn() as conn:
-            conn.execute("""
+            cur = conn.execute("""
                 INSERT INTO schedules
-                  (chat_id, label, message, period_days, start_date, end_date, created_by, created_at)
-                VALUES (?,?,?,?,?,?,?,?)
+                  (chat_id, label, message, period_days, start_date, end_date, send_time, created_by, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?)
             """, (
                 chat_id, label, message, int(period_str),
                 start.isoformat(),
                 end.isoformat() if end else None,
+                send_time,
                 session.get("username"),
                 datetime.now(TZ).isoformat(),
             ))
             conn.commit()
+        registrar_auditoria("criar_agendamento", f"#{cur.lastrowid} - {label or 'sem rótulo'}")
         flash("Agendamento criado com sucesso! ✅", "success")
         return redirect(url_for("index"))
 
@@ -446,6 +527,7 @@ def editar(sid):
         period_str = request.form.get("period_days", "").strip()
         start_str  = request.form.get("start_date", "").strip()
         end_str    = request.form.get("end_date", "").strip()
+        send_time  = request.form.get("send_time", "").strip() or "08:00"
         message    = request.form.get("message", "").strip()
 
         errors = []
@@ -470,10 +552,11 @@ def editar(sid):
         with get_conn() as conn:
             conn.execute("""
                 UPDATE schedules SET label=?, message=?, period_days=?,
-                  start_date=?, end_date=? WHERE id=?
+                  start_date=?, end_date=?, send_time=? WHERE id=?
             """, (label, message, int(period_str),
-                  start.isoformat(), end.isoformat() if end else None, sid))
+                  start.isoformat(), end.isoformat() if end else None, send_time, sid))
             conn.commit()
+        registrar_auditoria("editar_agendamento", f"#{sid}")
         flash("Agendamento atualizado! ✅", "success")
         return redirect(url_for("index"))
 
@@ -491,6 +574,7 @@ def toggle(sid):
             novo_estado = 0 if row["active"] else 1
             conn.execute("UPDATE schedules SET active=? WHERE id=?", (novo_estado, sid))
             conn.commit()
+            registrar_auditoria("alterar_status", f"#{sid} -> {'ativo' if novo_estado else 'pausado'}")
             flash(f"Agendamento #{sid} {'ativado ✅' if novo_estado else 'pausado ⏸'}.", "info")
     return redirect(url_for("index"))
 
@@ -502,6 +586,7 @@ def remover(sid):
         conn.execute("DELETE FROM schedules WHERE id=?", (sid,))
         conn.execute("DELETE FROM send_log WHERE schedule_id=?", (sid,))
         conn.commit()
+    registrar_auditoria("apagar_agendamento", f"#{sid}")
     flash(f"Agendamento #{sid} removido.", "warning")
     return redirect(url_for("index"))
 
@@ -523,6 +608,7 @@ def testar_envio(sid):
         return redirect(url_for("index"))
 
     ok, detail = enviar_telegram(r["chat_id"], f"🧪 *[TESTE]* {r['message']}")
+    registrar_auditoria("teste_envio", f"#{sid} -> {'ok' if ok else 'falhou: ' + detail[:100]}")
     if ok:
         flash(f"Mensagem de teste enviada! Confira o grupo/canal. ✅", "success")
     else:
@@ -566,7 +652,8 @@ def job_check_and_send():
         return {"verificados": 0, "enviados": 0, "erros": 0}
 
     today = hoje()
-    logger.info("Verificando agendamentos para %s", today)
+    agora  = datetime.now(TZ).time()
+    logger.info("Verificando agendamentos para %s %s", today, agora.strftime("%H:%M"))
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM schedules WHERE active=1").fetchall()
 
@@ -585,8 +672,13 @@ def job_check_and_send():
             continue
 
         prox = next_occurrence(start, r["period_days"], last)
+        horario_alvo = parse_time_str(r["send_time"] if "send_time" in r.keys() else None)
 
-        if prox <= today:
+        # Só dispara se: já passou do dia (recuperando atraso, ex. app ficou
+        # fora do ar) OU é hoje e o horário marcado já chegou.
+        deve_enviar = prox < today or (prox == today and agora >= horario_alvo)
+
+        if deve_enviar:
             ok, detail = enviar_telegram(r["chat_id"], r["message"])
             with get_conn() as conn:
                 if ok:
@@ -604,6 +696,10 @@ def job_check_and_send():
                     )
                     erros += 1
                     logger.error("❌ Falha no agendamento #%d: %s", r["id"], detail)
+                    alertar_admin(
+                        f"❌ Falha ao enviar agendamento #{r['id']} ({r['label'] or 'sem rótulo'})\n"
+                        f"Chat: `{r['chat_id']}`\nErro: {detail[:200]}"
+                    )
                 conn.commit()
 
     return {"verificados": len(rows), "enviados": enviados, "erros": erros}

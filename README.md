@@ -60,6 +60,67 @@ Como admin, vá em **Usuários** no menu lateral → preencha nome, senha (míni
 
 ---
 
+## 🆕 Atualização v4 — horário do envio, precisão com cron-job.org, auditoria e alertas
+
+Também não-destrutiva. O que muda:
+
+### Horário do envio
+
+Cada agendamento agora tem um campo **Horário** (além do período em dias).
+A mensagem só sai a partir desse horário, no primeiro check que acontecer
+depois dele — por isso a frequência do check importa (veja abaixo).
+Agendamentos atrasados de dias anteriores (ex: o servidor ficou fora do ar)
+disparam imediatamente, sem esperar o horário — não faz sentido segurar
+uma mensagem que já devia ter saído há dias.
+
+### Por que o cron-job.org agora faz sentido
+
+O GitHub Actions (3x/dia) não é feito pra precisão de horário — pode
+atrasar minutos, e frequências curtas (tipo a cada 5-15 min) são
+desencorajadas pela própria documentação do GitHub por confiabilidade.
+O cron-job.org é construído exatamente pra isso: grátis, até 1x por
+minuto, sem limite de jobs.
+
+**Configuração (uma vez só):**
+
+1. Crie conta grátis em [cron-job.org](https://cron-job.org)
+2. **Create cronjob** →
+   - **Title**: PopAgenda - check
+   - **URL**: `https://SEU_USUARIO.pythonanywhere.com/cron/check-and-send?token=SEU_CRON_SECRET`
+     (o mesmo `CRON_SECRET` do seu `.env`)
+   - **Schedule**: a cada 10 ou 15 minutos
+3. Salve e ative
+
+O GitHub Actions **continua rodando** 3x/dia — agora como rede de
+segurança redundante, caso o cron-job.org tenha algum problema. Não
+precisa remover nada.
+
+### Log de auditoria
+
+Nova tela **Auditoria** (menu do admin) registra: login (sucesso e
+falha), criação/edição/pausa/remoção de agendamentos, criação/remoção de
+usuários, testes de envio. Com filtro por tipo de ação.
+
+### Alerta de falha para o admin
+
+Configure `ADMIN_CHAT_ID` no `.env` (seu chat pessoal com o bot, ou um
+grupo/canal só seu) e toda falha de envio automático chega lá na hora,
+além de ficar registrada na Auditoria. Comecei só com falhas (não com
+todo login/edição) pra não virar spam no seu Telegram — se quiser ampliar
+isso, é só pedir.
+
+### Como aplicar
+
+Igual às atualizações anteriores:
+```bash
+cd PopAgenda
+git pull
+```
+Reload na aba Web. Se quiser os alertas de falha, adicione `ADMIN_CHAT_ID`
+no `.env` antes do reload.
+
+---
+
 ## O que mudou por baixo do capô (versão GitHub + PythonAnywhere)
 
 - O bot agora usa **webhook** em vez de "polling": o Telegram chama seu app
@@ -254,15 +315,14 @@ processo — ele fica de fora do controle de versão de propósito (veja o
 
 ## 📌 Roteiro — o que falta das suas ideias originais
 
-Já entregue nesta atualização (v3): usuários com permissões, contatos com
-nome amigável, botão de teste com senha.
+Já entregue: usuários com permissões, contatos com nome amigável, botão de
+teste, horário do envio, precisão com cron-job.org, log de auditoria,
+alerta de falha para o admin.
 
 Ainda por vir, na ordem que pretendo seguir:
 
-1. **Log de auditoria completo** — quem logou, criou, editou; alerta para um
-   chat do Telegram do admin quando algo falha
-2. **Categorias** para organizar as agendas + **emoji único por evento**
-3. **Eventos sem data definida** — salvar como rascunho para ativar depois
-4. **Visão de calendário** — panorama do que está agendado
+1. **Categorias** para organizar as agendas + **emoji único por evento**
+2. **Eventos sem data definida** — salvar como rascunho para ativar depois
+3. **Visão de calendário** — panorama do que está agendado
 
 Me avisa se quiser mudar essa ordem ou prioridade.
