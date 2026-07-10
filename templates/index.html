@@ -89,7 +89,7 @@
           <div class="col-6">
             <i class="bi bi-arrow-right-circle me-1 {% if s.overdue %}text-warning{% else %}text-success{% endif %}"></i>
             <strong>Próximo:</strong>
-            <span class="{% if s.overdue %}text-warning fw-bold{% endif %}">{{ s.next_display }}</span>
+            <span class="{% if s.overdue %}text-warning fw-bold{% endif %}">{{ s.next_display }} às {{ s.send_time }}</span>
           </div>
           <div class="col-12">
             <i class="bi bi-telegram me-1"></i>

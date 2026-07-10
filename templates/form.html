@@ -55,20 +55,32 @@
             </div>
           </div>
 
-          <div class="mb-3">
-            <label class="form-label fw-semibold">
-              Período de repetição (em dias) <span class="text-danger">*</span>
-            </label>
-            <div class="d-flex gap-2 flex-wrap mb-2">
-              {% for p in [7, 14, 21, 28, 30, 56, 60, 90] %}
-              <button type="button" class="btn btn-outline-primary btn-sm period-btn"
-                      data-val="{{ p }}">{{ p }}d</button>
-              {% endfor %}
+          <div class="row g-3 mb-3">
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">
+                Período de repetição (em dias) <span class="text-danger">*</span>
+              </label>
+              <div class="d-flex gap-2 flex-wrap mb-2">
+                {% for p in [7, 14, 21, 28, 30, 56, 60, 90] %}
+                <button type="button" class="btn btn-outline-primary btn-sm period-btn"
+                        data-val="{{ p }}">{{ p }}d</button>
+                {% endfor %}
+              </div>
+              <input type="number" name="period_days" id="period_days" class="form-control"
+                     placeholder="Ex: 7" min="1"
+                     value="{{ data.get('period_days', '') }}" required>
+              <div class="form-text">Você pode digitar qualquer valor em dias.</div>
             </div>
-            <input type="number" name="period_days" id="period_days" class="form-control"
-                   placeholder="Ex: 7" min="1"
-                   value="{{ data.get('period_days', '') }}" required>
-            <div class="form-text">Você pode digitar qualquer valor em dias.</div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Horário do envio</label>
+              <input type="time" name="send_time" class="form-control"
+                     value="{{ data.get('send_time', '08:00') }}">
+              <div class="form-text">
+                A mensagem sai a partir desse horário, no primeiro check
+                depois dele — precisão depende de quão frequente é o check
+                (veja o README).
+              </div>
+            </div>
           </div>
 
           <div class="row g-3 mb-3">
