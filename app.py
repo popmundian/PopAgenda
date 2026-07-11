@@ -117,6 +117,15 @@ def init_db():
                 details   TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS categories (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL UNIQUE,
+                color      TEXT NOT NULL DEFAULT '#229ED9',
+                created_by TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
         conn.commit()
 
         # Migração: quem já tinha o banco criado antes desta atualização não
@@ -126,6 +135,18 @@ def init_db():
             conn.execute("ALTER TABLE schedules ADD COLUMN send_time TEXT NOT NULL DEFAULT '08:00'")
             conn.commit()
             logger.info("Migração aplicada: coluna send_time adicionada.")
+        if "category_id" not in cols:
+            conn.execute("ALTER TABLE schedules ADD COLUMN category_id INTEGER")
+            conn.commit()
+            logger.info("Migração aplicada: coluna category_id adicionada.")
+        if "emoji" not in cols:
+            conn.execute("ALTER TABLE schedules ADD COLUMN emoji TEXT")
+            conn.commit()
+            logger.info("Migração aplicada: coluna emoji adicionada.")
+        if "is_draft" not in cols:
+            conn.execute("ALTER TABLE schedules ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+            logger.info("Migração aplicada: coluna is_draft adicionada.")
 
         # Semeia a primeira conta admin — só roda se AINDA não existir
         # nenhum usuário na tabela (ou seja, só na primeira execução).
@@ -178,8 +199,22 @@ def parse_time_str(s) -> dtime:
         return dtime(8, 0)
 
 
-def enrich(row):
+def enrich(row, categories_map=None):
     d = dict(row)
+    categories_map = categories_map or {}
+
+    if d.get("is_draft"):
+        # Rascunho: não tem data pra calcular nada, então nem tenta.
+        d["next_date"]     = None
+        d["next_display"]  = "—"
+        d["overdue"]       = False
+        d["end_display"]   = "—"
+        d["start_display"] = "—"
+        d["send_time"]      = d.get("send_time") or "08:00"
+        cat = categories_map.get(d.get("category_id"))
+        d["category_name"], d["category_color"] = (cat["name"], cat["color"]) if cat else (None, None)
+        return d
+
     start = date.fromisoformat(d["start_date"])
     last  = date.fromisoformat(d["last_sent"]) if d["last_sent"] else None
     prox  = next_occurrence(start, d["period_days"], last)
@@ -187,16 +222,33 @@ def enrich(row):
     d["next_date"]    = prox.isoformat()
     d["next_display"] = prox.strftime("%d/%m/%Y")
     d["send_time"]     = d.get("send_time") or "08:00"
-    # "atrasado" agora também considera o horário: só fica pendente de
-    # verdade se a data já chegou E o horário marcado já passou (ou se a
-    # data já é passada há mais de um dia, aí não faz sentido esperar).
     agora = datetime.now(TZ).time()
     horario_alvo = parse_time_str(d["send_time"])
     pendente_hoje = prox == today and agora >= horario_alvo
     d["overdue"]       = (prox < today or pendente_hoje) and d["active"]
     d["end_display"]   = date.fromisoformat(d["end_date"]).strftime("%d/%m/%Y") if d["end_date"] else "—"
     d["start_display"] = start.strftime("%d/%m/%Y")
+    cat = categories_map.get(d.get("category_id"))
+    d["category_name"], d["category_color"] = (cat["name"], cat["color"]) if cat else (None, None)
     return d
+
+
+def get_categories_map():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM categories").fetchall()
+    return {r["id"]: {"name": r["name"], "color": r["color"]} for r in rows}
+
+
+def emoji_em_uso(emoji, excluir_id=None):
+    """Retorna a linha do agendamento que já usa esse emoji, ou None se está livre."""
+    if not emoji:
+        return None
+    with get_conn() as conn:
+        if excluir_id:
+            return conn.execute(
+                "SELECT id, label FROM schedules WHERE emoji=? AND id!=?", (emoji, excluir_id)
+            ).fetchone()
+        return conn.execute("SELECT id, label FROM schedules WHERE emoji=?", (emoji,)).fetchone()
 
 
 def get_contacts_map():
@@ -438,19 +490,79 @@ def contatos_remover(cid):
     return redirect(url_for("contatos"))
 
 
+# ── Categorias ────────────────────────────────────────────────────────────────
+@app.route("/categorias")
+@login_required
+def categorias():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
+    return render_template("categorias.html", categorias=rows, user=session.get("username"),
+                           is_admin=(session.get("role") == "admin"))
+
+
+@app.route("/categorias/novo", methods=["POST"])
+@login_required
+def categorias_novo():
+    nome = request.form.get("name", "").strip()
+    cor  = request.form.get("color", "#229ED9").strip() or "#229ED9"
+    if not nome:
+        flash("Informe um nome para a categoria.", "danger")
+        return redirect(url_for("categorias"))
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO categories (name, color, created_by, created_at) VALUES (?,?,?,?)",
+                (nome, cor, session.get("username"), datetime.now(TZ).isoformat())
+            )
+            conn.commit()
+        registrar_auditoria("criar_categoria", nome)
+        flash(f"Categoria '{nome}' criada! ✅", "success")
+    except sqlite3.IntegrityError:
+        flash("Já existe uma categoria com esse nome.", "danger")
+    return redirect(url_for("categorias"))
+
+
+@app.route("/categorias/remover/<int:cid>", methods=["POST"])
+@login_required
+def categorias_remover(cid):
+    with get_conn() as conn:
+        conn.execute("UPDATE schedules SET category_id=NULL WHERE category_id=?", (cid,))
+        conn.execute("DELETE FROM categories WHERE id=?", (cid,))
+        conn.commit()
+    registrar_auditoria("remover_categoria", f"id={cid}")
+    flash("Categoria removida. Agendamentos que usavam ela ficaram sem categoria.", "warning")
+    return redirect(url_for("categorias"))
+
+
 # ── Rotas do painel (agendamentos) ───────────────────────────────────────────
 @app.route("/")
 @login_required
 def index():
+    sort = request.args.get("sort", "next")
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM schedules ORDER BY active DESC, id DESC").fetchall()
-    contacts_map = get_contacts_map()
+        categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
+    contacts_map   = get_contacts_map()
+    categories_map = get_categories_map()
     schedules = []
     for r in rows:
-        s = enrich(r)
+        s = enrich(r, categories_map)
         s["friendly_name"] = contacts_map.get(s["chat_id"])
         schedules.append(s)
-    return render_template("index.html", schedules=schedules, user=session.get("username"),
+
+    # Rascunhos sempre por último dentro de cada critério de ordenação —
+    # não tem data pra comparar, então não faz sentido competir por posição.
+    if sort == "categoria":
+        schedules.sort(key=lambda s: (s["is_draft"], (s["category_name"] or "zzz_sem_categoria").lower()))
+    elif sort == "alfabetica":
+        schedules.sort(key=lambda s: (s["is_draft"], (s["label"] or "").lower()))
+    elif sort == "periodo":
+        schedules.sort(key=lambda s: (s["is_draft"], s["period_days"]))
+    else:
+        schedules.sort(key=lambda s: (s["is_draft"], s["next_date"] or "9999-99-99"))
+
+    return render_template("index.html", schedules=schedules, categories=categories,
+                           sort=sort, user=session.get("username"),
                            is_admin=(session.get("role") == "admin"))
 
 
@@ -458,57 +570,74 @@ def index():
 @login_required
 def novo():
     with get_conn() as conn:
-        contacts = conn.execute("SELECT * FROM contacts ORDER BY friendly_name").fetchall()
+        contacts   = conn.execute("SELECT * FROM contacts ORDER BY friendly_name").fetchall()
+        categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
 
     if request.method == "POST":
         label       = request.form.get("label", "").strip()
         chat_id     = request.form.get("chat_id", "").strip()
+        is_draft    = request.form.get("is_draft") == "on"
         period_str  = request.form.get("period_days", "").strip()
         start_str   = request.form.get("start_date", "").strip()
         end_str     = request.form.get("end_date", "").strip()
         send_time   = request.form.get("send_time", "").strip() or "08:00"
+        category_id = request.form.get("category_id") or None
+        emoji       = request.form.get("emoji", "").strip() or None
         message     = request.form.get("message", "").strip()
 
         errors = []
         if not chat_id:
             errors.append("Informe o Chat ID do grupo.")
-        if not period_str.isdigit() or int(period_str) < 1:
-            errors.append("Período deve ser um número inteiro positivo.")
-        start = parse_date(start_str)
-        if not start:
-            errors.append("Data de início inválida.")
-        end = parse_date(end_str) if end_str else None
-        if end and start and end <= start:
-            errors.append("Data final deve ser posterior à inicial.")
         if not message:
             errors.append("A mensagem não pode ser vazia.")
+
+        start, end = None, None
+        if is_draft:
+            # Rascunho: sem data ainda, então nem valida período/datas.
+            period_int = 0
+        else:
+            if not period_str.isdigit() or int(period_str) < 1:
+                errors.append("Período deve ser um número inteiro positivo.")
+            start = parse_date(start_str)
+            if not start:
+                errors.append("Data de início inválida.")
+            end = parse_date(end_str) if end_str else None
+            if end and start and end <= start:
+                errors.append("Data final deve ser posterior à inicial.")
+            period_int = int(period_str) if period_str.isdigit() else 0
+
+        conflito = emoji_em_uso(emoji)
+        if conflito:
+            errors.append(f"O emoji {emoji} já está em uso por '{conflito['label'] or ('#' + str(conflito['id']))}'.")
 
         if errors:
             for e in errors:
                 flash(e, "danger")
             return render_template("form.html", action="novo", data=request.form,
-                                   contacts=contacts, user=session.get("username"),
-                                   is_admin=(session.get("role") == "admin"))
+                                   contacts=contacts, categories=categories,
+                                   user=session.get("username"), is_admin=(session.get("role") == "admin"))
 
         with get_conn() as conn:
             cur = conn.execute("""
                 INSERT INTO schedules
-                  (chat_id, label, message, period_days, start_date, end_date, send_time, created_by, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?)
+                  (chat_id, label, message, period_days, start_date, end_date, send_time,
+                   category_id, emoji, is_draft, created_by, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
-                chat_id, label, message, int(period_str),
-                start.isoformat(),
+                chat_id, label, message, period_int,
+                start.isoformat() if start else "",
                 end.isoformat() if end else None,
-                send_time,
+                send_time, category_id, emoji, 1 if is_draft else 0,
                 session.get("username"),
                 datetime.now(TZ).isoformat(),
             ))
             conn.commit()
-        registrar_auditoria("criar_agendamento", f"#{cur.lastrowid} - {label or 'sem rótulo'}")
-        flash("Agendamento criado com sucesso! ✅", "success")
+        registrar_auditoria("criar_agendamento", f"#{cur.lastrowid} - {label or 'sem rótulo'}"
+                             + (" (rascunho)" if is_draft else ""))
+        flash("Rascunho salvo! ✅" if is_draft else "Agendamento criado com sucesso! ✅", "success")
         return redirect(url_for("index"))
 
-    return render_template("form.html", action="novo", data={}, contacts=contacts,
+    return render_template("form.html", action="novo", data={}, contacts=contacts, categories=categories,
                            user=session.get("username"), is_admin=(session.get("role") == "admin"))
 
 
@@ -517,52 +646,69 @@ def novo():
 def editar(sid):
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM schedules WHERE id=?", (sid,)).fetchone()
-        contacts = conn.execute("SELECT * FROM contacts ORDER BY friendly_name").fetchall()
+        contacts   = conn.execute("SELECT * FROM contacts ORDER BY friendly_name").fetchall()
+        categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
     if not row:
         flash("Agendamento não encontrado.", "danger")
         return redirect(url_for("index"))
 
     if request.method == "POST":
-        label      = request.form.get("label", "").strip()
-        period_str = request.form.get("period_days", "").strip()
-        start_str  = request.form.get("start_date", "").strip()
-        end_str    = request.form.get("end_date", "").strip()
-        send_time  = request.form.get("send_time", "").strip() or "08:00"
-        message    = request.form.get("message", "").strip()
+        label       = request.form.get("label", "").strip()
+        is_draft    = request.form.get("is_draft") == "on"
+        period_str  = request.form.get("period_days", "").strip()
+        start_str   = request.form.get("start_date", "").strip()
+        end_str     = request.form.get("end_date", "").strip()
+        send_time   = request.form.get("send_time", "").strip() or "08:00"
+        category_id = request.form.get("category_id") or None
+        emoji       = request.form.get("emoji", "").strip() or None
+        message     = request.form.get("message", "").strip()
 
         errors = []
-        if not period_str.isdigit() or int(period_str) < 1:
-            errors.append("Período inválido.")
-        start = parse_date(start_str)
-        if not start:
-            errors.append("Data de início inválida.")
-        end = parse_date(end_str) if end_str else None
-        if end and start and end <= start:
-            errors.append("Data final deve ser posterior à inicial.")
         if not message:
             errors.append("A mensagem não pode ser vazia.")
+
+        start, end = None, None
+        if is_draft:
+            period_int = 0
+        else:
+            if not period_str.isdigit() or int(period_str) < 1:
+                errors.append("Período inválido.")
+            start = parse_date(start_str)
+            if not start:
+                errors.append("Data de início inválida (obrigatória para ativar o rascunho).")
+            end = parse_date(end_str) if end_str else None
+            if end and start and end <= start:
+                errors.append("Data final deve ser posterior à inicial.")
+            period_int = int(period_str) if period_str.isdigit() else 0
+
+        conflito = emoji_em_uso(emoji, excluir_id=sid)
+        if conflito:
+            errors.append(f"O emoji {emoji} já está em uso por '{conflito['label'] or ('#' + str(conflito['id']))}'.")
 
         if errors:
             for e in errors:
                 flash(e, "danger")
             return render_template("form.html", action="editar", sid=sid, data=request.form,
-                                   contacts=contacts, user=session.get("username"),
+                                   contacts=contacts, categories=categories, user=session.get("username"),
                                    is_admin=(session.get("role") == "admin"))
 
         with get_conn() as conn:
             conn.execute("""
-                UPDATE schedules SET label=?, message=?, period_days=?,
-                  start_date=?, end_date=?, send_time=? WHERE id=?
-            """, (label, message, int(period_str),
-                  start.isoformat(), end.isoformat() if end else None, send_time, sid))
+                UPDATE schedules SET label=?, message=?, period_days=?, start_date=?, end_date=?,
+                  send_time=?, category_id=?, emoji=?, is_draft=? WHERE id=?
+            """, (label, message, period_int, start.isoformat() if start else "",
+                  end.isoformat() if end else None, send_time, category_id, emoji,
+                  1 if is_draft else 0, sid))
             conn.commit()
-        registrar_auditoria("editar_agendamento", f"#{sid}")
-        flash("Agendamento atualizado! ✅", "success")
+        registrar_auditoria("editar_agendamento", f"#{sid}" + (" (virou rascunho)" if is_draft
+                             else " (ativado)" if row["is_draft"] else ""))
+        flash("Rascunho atualizado! ✅" if is_draft else "Agendamento atualizado! ✅", "success")
         return redirect(url_for("index"))
 
     data = dict(row)
     return render_template("form.html", action="editar", sid=sid, data=data, contacts=contacts,
-                           user=session.get("username"), is_admin=(session.get("role") == "admin"))
+                           categories=categories, user=session.get("username"),
+                           is_admin=(session.get("role") == "admin"))
 
 
 @app.route("/toggle/<int:sid>")
@@ -660,6 +806,9 @@ def job_check_and_send():
     enviados, erros = 0, 0
 
     for r in rows:
+        if r["is_draft"]:
+            continue  # rascunho sem data — nunca é considerado pro envio
+
         start = date.fromisoformat(r["start_date"])
         end   = date.fromisoformat(r["end_date"]) if r["end_date"] else None
         last  = r["last_sent"]
@@ -743,7 +892,7 @@ def telegram_webhook():
     elif comando == "/status":
         with get_conn() as conn:
             rows = conn.execute(
-                "SELECT * FROM schedules WHERE chat_id=? AND active=1 ORDER BY id",
+                "SELECT * FROM schedules WHERE chat_id=? AND active=1 AND is_draft=0 ORDER BY id",
                 (str(chat_id),)
             ).fetchall()
         if not rows:

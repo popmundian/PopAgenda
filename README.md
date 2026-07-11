@@ -121,6 +121,45 @@ no `.env` antes do reload.
 
 ---
 
+## 🆕 Atualização v5 — categorias, emoji único e eventos sem data (rascunho)
+
+Também não-destrutiva.
+
+### Categorias
+
+Tela nova **Categorias** (menu lateral) — crie categorias com nome e cor,
+associe ao criar/editar um agendamento. O dashboard ganhou um seletor de
+**ordenação**: por próximo envio, categoria, alfabética ou período.
+
+### Emoji único por evento
+
+Campo de emoji no formulário (com paleta de sugestões + você pode colar
+qualquer emoji). O sistema **bloqueia** se você tentar usar um emoji que já
+está em outro agendamento, apontando qual é.
+
+### Eventos sem data (rascunho)
+
+Marque "Salvar sem data definida" ao criar um evento que você sabe que vai
+acontecer de novo, mas ainda não sabe quando. Fica guardado, visível no
+dashboard com uma tag **Rascunho**, e nunca entra na fila de envio. Pra
+ativar depois, é só editar e preencher período + data — o sistema detecta
+e ativa automaticamente.
+
+### Como aplicar
+
+```bash
+cd PopAgenda
+git pull
+```
+Reload na aba Web. Sem dependência nova.
+
+**Arquivos que mudaram nesta atualização** (se for subir manualmente pelo
+GitHub em vez de usar git pull local): `app.py`, `templates/form.html`,
+`templates/index.html`, `templates/base.html`, e o novo
+`templates/categorias.html`.
+
+---
+
 ## O que mudou por baixo do capô (versão GitHub + PythonAnywhere)
 
 - O bot agora usa **webhook** em vez de "polling": o Telegram chama seu app
@@ -315,14 +354,12 @@ processo — ele fica de fora do controle de versão de propósito (veja o
 
 ## 📌 Roteiro — o que falta das suas ideias originais
 
-Já entregue: usuários com permissões, contatos com nome amigável, botão de
-teste, horário do envio, precisão com cron-job.org, log de auditoria,
-alerta de falha para o admin.
+Já entregue: usuários com permissões, contatos, botão de teste, horário do
+envio, precisão com cron-job.org, auditoria, alerta de falha, categorias,
+emoji único, eventos sem data (rascunho).
 
-Ainda por vir, na ordem que pretendo seguir:
+Ainda por vir:
 
-1. **Categorias** para organizar as agendas + **emoji único por evento**
-2. **Eventos sem data definida** — salvar como rascunho para ativar depois
-3. **Visão de calendário** — panorama do que está agendado
+1. **Visão de calendário** — panorama do que está agendado
 
-Me avisa se quiser mudar essa ordem ou prioridade.
+Me avisa quando quiser seguir pra essa.

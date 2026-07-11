@@ -19,7 +19,21 @@
   <div class="col-12 col-lg-8">
     <div class="card">
       <div class="card-body p-4">
-        <form method="POST">
+        <form method="POST" id="scheduleForm">
+
+          <div class="form-check form-switch mb-4 p-3 rounded" style="background:#f8fafc; border:1px solid #e2e8f0">
+            <input class="form-check-input" type="checkbox" name="is_draft" id="is_draft" role="switch"
+                   {% if data.get('is_draft') %}checked{% endif %}
+                   onchange="toggleRascunho()">
+            <label class="form-check-label fw-semibold" for="is_draft">
+              📝 Salvar sem data definida (rascunho)
+            </label>
+            <div class="form-text mb-0">
+              Pra eventos que sempre acontecem, mas você ainda não sabe quando
+              será a próxima vez. Fica guardado e não entra na fila de envio
+              até você voltar aqui e definir uma data.
+            </div>
+          </div>
 
           <div class="row g-3 mb-3">
             <div class="col-md-6">
@@ -56,48 +70,73 @@
           </div>
 
           <div class="row g-3 mb-3">
-            <div class="col-md-8">
+            <div class="col-md-7">
               <label class="form-label fw-semibold">
-                Período de repetição (em dias) <span class="text-danger">*</span>
+                Categoria <span class="text-muted fw-normal">(opcional)</span>
               </label>
-              <div class="d-flex gap-2 flex-wrap mb-2">
-                {% for p in [7, 14, 21, 28, 30, 56, 60, 90] %}
-                <button type="button" class="btn btn-outline-primary btn-sm period-btn"
-                        data-val="{{ p }}">{{ p }}d</button>
+              <select name="category_id" class="form-select">
+                <option value="">— sem categoria —</option>
+                {% for c in categories %}
+                <option value="{{ c.id }}" {% if data.get('category_id')|string == c.id|string %}selected{% endif %}
+                        style="color:{{ c.color }}">{{ c.name }}</option>
                 {% endfor %}
-              </div>
-              <input type="number" name="period_days" id="period_days" class="form-control"
-                     placeholder="Ex: 7" min="1"
-                     value="{{ data.get('period_days', '') }}" required>
-              <div class="form-text">Você pode digitar qualquer valor em dias.</div>
-            </div>
-            <div class="col-md-4">
-              <label class="form-label fw-semibold">Horário do envio</label>
-              <input type="time" name="send_time" class="form-control"
-                     value="{{ data.get('send_time', '08:00') }}">
+              </select>
               <div class="form-text">
-                A mensagem sai a partir desse horário, no primeiro check
-                depois dele — precisão depende de quão frequente é o check
-                (veja o README).
+                Gerencie em <a href="{{ url_for('categorias') }}" target="_blank">Categorias</a>.
               </div>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label fw-semibold">
+                Emoji <span class="text-muted fw-normal">(único, opcional)</span>
+              </label>
+              <input type="text" name="emoji" id="emoji" class="form-control text-center"
+                     style="font-size:1.3rem" maxlength="8"
+                     placeholder="🎯" value="{{ data.get('emoji', '') }}">
+              <div class="d-flex flex-wrap gap-1 mt-2" id="emoji-palette" style="font-size:1.1rem"></div>
             </div>
           </div>
 
-          <div class="row g-3 mb-3">
-            <div class="col-md-6">
-              <label class="form-label fw-semibold">
-                Data de início <span class="text-danger">*</span>
-              </label>
-              <input type="date" name="start_date" class="form-control"
-                     value="{{ data.get('start_date', '') }}" required>
+          <div id="camposComData">
+            <div class="row g-3 mb-3">
+              <div class="col-md-8">
+                <label class="form-label fw-semibold">
+                  Período de repetição (em dias) <span class="text-danger">*</span>
+                </label>
+                <div class="d-flex gap-2 flex-wrap mb-2">
+                  {% for p in [7, 14, 21, 28, 30, 56, 60, 90] %}
+                  <button type="button" class="btn btn-outline-primary btn-sm period-btn"
+                          data-val="{{ p }}">{{ p }}d</button>
+                  {% endfor %}
+                </div>
+                <input type="number" name="period_days" id="period_days" class="form-control"
+                       placeholder="Ex: 7" min="1"
+                       value="{{ data.get('period_days', '') }}">
+                <div class="form-text">Você pode digitar qualquer valor em dias.</div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Horário do envio</label>
+                <input type="time" name="send_time" class="form-control"
+                       value="{{ data.get('send_time', '08:00') }}">
+                <div class="form-text">Sai a partir desse horário, no próximo check.</div>
+              </div>
             </div>
-            <div class="col-md-6">
-              <label class="form-label fw-semibold">
-                Data de fim <span class="text-muted fw-normal">(opcional)</span>
-              </label>
-              <input type="date" name="end_date" class="form-control"
-                     value="{{ data.get('end_date', '') }}">
-              <div class="form-text">Deixe em branco para repetir indefinidamente.</div>
+
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">
+                  Data de início <span class="text-danger">*</span>
+                </label>
+                <input type="date" name="start_date" class="form-control"
+                       value="{{ data.get('start_date', '') }}">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">
+                  Data de fim <span class="text-muted fw-normal">(opcional)</span>
+                </label>
+                <input type="date" name="end_date" class="form-control"
+                       value="{{ data.get('end_date', '') }}">
+                <div class="form-text">Deixe em branco para repetir indefinidamente.</div>
+              </div>
             </div>
           </div>
 
@@ -111,20 +150,6 @@
             <div class="form-text">
               Suporta <strong>Markdown Telegram</strong>: <code>*negrito*</code>
               <code>_itálico_</code> <code>`código`</code>
-            </div>
-          </div>
-
-          <div class="mb-4" id="preview-box" style="display:none">
-            <label class="form-label fw-semibold text-muted">Prévia do agendamento</label>
-            <div class="p-3 rounded" style="background:#f8fafc; border: 1px solid #e2e8f0; font-size:.85rem">
-              <div class="text-muted mb-1">
-                <i class="bi bi-arrow-repeat me-1"></i>
-                A cada <strong id="pv-period">—</strong> dias |
-                Início: <strong id="pv-start">—</strong> |
-                Fim: <strong id="pv-end">sem limite</strong>
-              </div>
-              <div style="border-left: 3px solid #229ED9; padding-left:.75rem; white-space:pre-wrap"
-                   id="pv-msg">—</div>
             </div>
           </div>
 
@@ -148,24 +173,29 @@
 document.querySelectorAll('.period-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.getElementById('period_days').value = btn.dataset.val;
-    updatePreview();
   });
 });
 
-function updatePreview() {
-  const p = document.getElementById('period_days').value;
-  const s = document.querySelector('[name=start_date]').value;
-  const e = document.querySelector('[name=end_date]').value;
-  const m = document.querySelector('[name=message]').value;
-  if (p || s || m) {
-    document.getElementById('preview-box').style.display = '';
-    document.getElementById('pv-period').textContent = p || '—';
-    document.getElementById('pv-start').textContent   = s ? s.split('-').reverse().join('/') : '—';
-    document.getElementById('pv-end').textContent     = e ? e.split('-').reverse().join('/') : 'sem limite';
-    document.getElementById('pv-msg').textContent     = m || '—';
-  }
+// Paleta rápida de emojis -- clicar preenche o campo de texto
+const EMOJIS = ['🎮','⚔️','🛡️','🏆','🎯','🎨','🎪','🎭','🎬','🎤','🎸','🥊','⚽','🏀',
+                '🎲','🃏','💰','📦','🔔','📢','📣','💬','🤝','🎉','🎊','🥳','🍕','🍺',
+                '☕','🌙','☀️','⭐','🔥','💎','🚀','📅','🗓️','⏰','🎁','🏅'];
+const palette = document.getElementById('emoji-palette');
+EMOJIS.forEach(e => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn btn-sm btn-outline-secondary py-0 px-1';
+  b.textContent = e;
+  b.onclick = () => { document.getElementById('emoji').value = e; };
+  palette.appendChild(b);
+});
+
+// Alterna a exigência dos campos de data conforme o modo rascunho
+function toggleRascunho() {
+  const checked = document.getElementById('is_draft').checked;
+  document.getElementById('camposComData').style.opacity = checked ? '0.4' : '1';
+  document.getElementById('camposComData').style.pointerEvents = checked ? 'none' : 'auto';
 }
-document.querySelectorAll('input,textarea').forEach(el => el.addEventListener('input', updatePreview));
-updatePreview();
+toggleRascunho();
 </script>
 {% endblock %}

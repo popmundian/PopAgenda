@@ -2,14 +2,25 @@
 {% block title %}Agendamentos — Painel{% endblock %}
 
 {% block content %}
-<div class="topbar">
+<div class="topbar flex-wrap gap-2">
   <div>
     <h5 class="mb-0 fw-bold"><i class="bi bi-calendar3 me-2 text-primary"></i>Agendamentos</h5>
     <small class="text-muted">Mensagens recorrentes para seus grupos do Telegram</small>
   </div>
-  <a href="{{ url_for('novo') }}" class="btn btn-brand btn-sm px-3">
-    <i class="bi bi-plus-lg me-1"></i> Novo
-  </a>
+  <div class="d-flex gap-2 align-items-center">
+    <form method="GET" class="d-flex align-items-center gap-1">
+      <label class="form-label mb-0 small text-muted">Ordenar:</label>
+      <select name="sort" class="form-select form-select-sm" style="width:auto" onchange="this.form.submit()">
+        <option value="next" {% if sort == 'next' %}selected{% endif %}>Próximo envio</option>
+        <option value="categoria" {% if sort == 'categoria' %}selected{% endif %}>Categoria</option>
+        <option value="alfabetica" {% if sort == 'alfabetica' %}selected{% endif %}>Alfabética</option>
+        <option value="periodo" {% if sort == 'periodo' %}selected{% endif %}>Período</option>
+      </select>
+    </form>
+    <a href="{{ url_for('novo') }}" class="btn btn-brand btn-sm px-3">
+      <i class="bi bi-plus-lg me-1"></i> Novo
+    </a>
+  </div>
 </div>
 
 <div class="row g-3 mb-4" id="stats-row">
@@ -47,12 +58,15 @@
 <div class="row g-3">
   {% for s in schedules %}
   <div class="col-12 col-xl-6">
-    <div class="card h-100">
-      <div class="card-header d-flex align-items-center justify-content-between py-2">
+    <div class="card h-100 {% if s.is_draft %}border-secondary{% endif %}">
+      <div class="card-header d-flex align-items-center justify-content-between py-2 flex-wrap gap-1">
         <div class="d-flex align-items-center gap-2">
+          {% if s.emoji %}<span style="font-size:1.1rem">{{ s.emoji }}</span>{% endif %}
           <span class="text-muted" style="font-size:.78rem">#{{ s.id }}</span>
           <strong>{{ s.label or ('Agendamento ' ~ s.id) }}</strong>
-          {% if s.active %}
+          {% if s.is_draft %}
+            <span class="badge bg-secondary"><i class="bi bi-file-earmark-text me-1"></i>Rascunho</span>
+          {% elif s.active %}
             {% if s.overdue %}
               <span class="badge badge-overdue"><i class="bi bi-clock-history me-1"></i>Pendente</span>
             {% else %}
@@ -61,13 +75,26 @@
           {% else %}
             <span class="badge badge-paused"><i class="bi bi-pause-circle me-1"></i>Pausado</span>
           {% endif %}
+          {% if s.category_name %}
+            <span class="badge" style="background:{{ s.category_color }}20; color:{{ s.category_color }}; border:1px solid {{ s.category_color }}">
+              {{ s.category_name }}
+            </span>
+          {% endif %}
         </div>
+        {% if not s.is_draft %}
         <span class="badge badge-period">
           <i class="bi bi-arrow-repeat me-1"></i>{{ s.period_days }} dias
         </span>
+        {% endif %}
       </div>
       <div class="card-body py-2">
         <div class="schedule-msg mb-2">{{ s.message }}</div>
+        {% if s.is_draft %}
+        <div class="alert alert-secondary py-2 px-3 mb-2" style="font-size:.8rem">
+          <i class="bi bi-info-circle me-1"></i>
+          Sem data definida ainda. Edite e preencha o período/data para ativar.
+        </div>
+        {% else %}
         <div class="row g-2" style="font-size:.8rem; color:#6b7280">
           <div class="col-6">
             <i class="bi bi-calendar-event me-1"></i>
@@ -91,6 +118,9 @@
             <strong>Próximo:</strong>
             <span class="{% if s.overdue %}text-warning fw-bold{% endif %}">{{ s.next_display }} às {{ s.send_time }}</span>
           </div>
+        </div>
+        {% endif %}
+        <div class="row g-2 mt-1" style="font-size:.8rem; color:#6b7280">
           <div class="col-12">
             <i class="bi bi-telegram me-1"></i>
             <strong>Chat:</strong>
@@ -107,8 +137,9 @@
       </div>
       <div class="card-footer bg-white border-top d-flex flex-wrap gap-2 py-2">
         <a href="{{ url_for('editar', sid=s.id) }}" class="btn btn-outline-secondary btn-sm">
-          <i class="bi bi-pencil"></i> Editar
+          <i class="bi bi-pencil"></i> {% if s.is_draft %}Ativar{% else %}Editar{% endif %}
         </a>
+        {% if not s.is_draft %}
         <a href="{{ url_for('toggle', sid=s.id) }}" class="btn btn-sm {% if s.active %}btn-outline-warning{% else %}btn-outline-success{% endif %}">
           {% if s.active %}
             <i class="bi bi-pause"></i> Pausar
@@ -116,6 +147,7 @@
             <i class="bi bi-play"></i> Ativar
           {% endif %}
         </a>
+        {% endif %}
         <button type="button" class="btn btn-outline-primary btn-sm" onclick="abrirTeste({{ s.id }})">
           <i class="bi bi-send-check"></i> Testar
         </button>
