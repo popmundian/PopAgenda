@@ -9,6 +9,7 @@ import os
 import logging
 import sqlite3
 import secrets
+import calendar as pycalendar
 from datetime import datetime, date, time as dtime, timedelta
 from zoneinfo import ZoneInfo
 from functools import wraps
@@ -195,6 +196,33 @@ def next_occurrence(start: date, period: int, last_sent) -> date:
     while n < start:
         n += timedelta(days=period)
     return n
+
+
+def occurrences_in_range(start: date, period: int, end, range_start: date, range_end: date):
+    """Todas as datas em que um agendamento recorrente cai dentro de
+    [range_start, range_end] — usado pelo calendário (que precisa de TODAS
+    as ocorrências do mês, não só a próxima, que é o que next_occurrence faz)."""
+    if period <= 0 or start > range_end:
+        return []
+    if end and end < range_start:
+        return []
+
+    limite = min(range_end, end) if end else range_end
+
+    if start >= range_start:
+        primeira = start
+    else:
+        ciclos_completos = (range_start - start).days // period
+        primeira = start + timedelta(days=ciclos_completos * period)
+        while primeira < range_start:
+            primeira += timedelta(days=period)
+
+    ocorrencias = []
+    cur = primeira
+    while cur <= limite:
+        ocorrencias.append(cur)
+        cur += timedelta(days=period)
+    return ocorrencias
 
 
 def parse_time_str(s) -> dtime:
@@ -474,6 +502,69 @@ def auditoria():
                            filtro=filtro, user=session.get("username"), is_admin=True)
 
 
+# ── Calendário ────────────────────────────────────────────────────────────────
+_NOMES_MESES = ["", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+
+
+@app.route("/calendario")
+@login_required
+def calendario():
+    hoje_d = hoje()
+    try:
+        ano = int(request.args.get("ano", hoje_d.year))
+        mes = int(request.args.get("mes", hoje_d.month))
+    except ValueError:
+        ano, mes = hoje_d.year, hoje_d.month
+    if mes < 1:
+        ano, mes = ano - 1, 12
+    elif mes > 12:
+        ano, mes = ano + 1, 1
+
+    cal = pycalendar.Calendar(firstweekday=pycalendar.MONDAY)
+    semanas = cal.monthdatescalendar(ano, mes)
+    intervalo_inicio, intervalo_fim = semanas[0][0], semanas[-1][-1]
+
+    is_admin = session.get("role") == "admin"
+    meu_canal = None
+
+    with get_conn() as conn:
+        if is_admin:
+            rows = conn.execute("SELECT * FROM schedules WHERE is_draft=0").fetchall()
+        else:
+            u = conn.execute("SELECT favorite_chat_id FROM users WHERE id=?", (session["user_id"],)).fetchone()
+            meu_canal = u["favorite_chat_id"] if u else None
+            rows = conn.execute(
+                "SELECT * FROM schedules WHERE is_draft=0 AND chat_id=?", (meu_canal,)
+            ).fetchall() if meu_canal else []
+
+    categories_map = get_categories_map()
+    eventos_por_dia = {}
+    for r in rows:
+        start = date.fromisoformat(r["start_date"])
+        end   = date.fromisoformat(r["end_date"]) if r["end_date"] else None
+        cat = categories_map.get(r["category_id"])
+        for d in occurrences_in_range(start, r["period_days"], end, intervalo_inicio, intervalo_fim):
+            eventos_por_dia.setdefault(d, []).append({
+                "id": r["id"],
+                "label": r["label"] or f"Agendamento #{r['id']}",
+                "emoji": r["emoji"] or "📌",
+                "active": r["active"],
+                "cat_color": cat["color"] if cat else None,
+            })
+
+    prev_ano, prev_mes = (ano - 1, 12) if mes == 1 else (ano, mes - 1)
+    next_ano, next_mes = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
+
+    return render_template(
+        "calendario.html", semanas=semanas, ano=ano, mes=mes, nome_mes=_NOMES_MESES[mes],
+        eventos_por_dia=eventos_por_dia, hoje=hoje_d,
+        prev_ano=prev_ano, prev_mes=prev_mes, next_ano=next_ano, next_mes=next_mes,
+        tem_canal=(is_admin or bool(meu_canal)),
+        user=session.get("username"), is_admin=is_admin,
+    )
+
+
 # ── Canais de comunicação (nomes amigáveis para Chat IDs) ────────────────────
 @app.route("/canais")
 @login_required
@@ -506,11 +597,13 @@ def canais_novo():
 
 
 @app.route("/canais/remover/<int:cid>", methods=["POST"])
-@login_required
+@admin_required
 def canais_remover(cid):
     with get_conn() as conn:
+        row = conn.execute("SELECT friendly_name FROM contacts WHERE id=?", (cid,)).fetchone()
         conn.execute("DELETE FROM contacts WHERE id=?", (cid,))
         conn.commit()
+    registrar_auditoria("remover_canal", row["friendly_name"] if row else f"id={cid}")
     flash("Canal removido.", "warning")
     return redirect(url_for("canais"))
 
@@ -548,7 +641,7 @@ def categorias_novo():
 
 
 @app.route("/categorias/remover/<int:cid>", methods=["POST"])
-@login_required
+@admin_required
 def categorias_remover(cid):
     with get_conn() as conn:
         conn.execute("UPDATE schedules SET category_id=NULL WHERE category_id=?", (cid,))

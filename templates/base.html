@@ -177,6 +177,9 @@
     <a href="{{ url_for('categorias') }}" class="nav-link {% if request.endpoint == 'categorias' %}active{% endif %}">
       <i class="bi bi-tags"></i> Categorias
     </a>
+    <a href="{{ url_for('calendario') }}" class="nav-link {% if request.endpoint == 'calendario' %}active{% endif %}">
+      <i class="bi bi-calendar-week"></i> Calendário
+    </a>
     {% if is_admin %}
     <div class="nav-label">Administração</div>
     <a href="{{ url_for('usuarios') }}" class="nav-link {% if request.endpoint == 'usuarios' %}active{% endif %}">

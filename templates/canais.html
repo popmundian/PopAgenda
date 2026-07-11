@@ -33,12 +33,14 @@
               <td>{{ c.friendly_name }}</td>
               <td><code>{{ c.chat_id }}</code></td>
               <td class="text-end">
+                {% if is_admin %}
                 <form method="POST" action="{{ url_for('canais_remover', cid=c.id) }}" class="d-inline"
                       onsubmit="return confirm('Remover o canal {{ c.friendly_name }}?')">
                   <button type="submit" class="btn btn-outline-danger btn-sm">
                     <i class="bi bi-trash"></i>
                   </button>
                 </form>
+                {% endif %}
               </td>
             </tr>
             {% endfor %}
