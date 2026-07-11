@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Agendador de Mensagens Telegram — Painel Web + Bot integrado
-v3: múltiplos usuários com permissões (admin/user), contatos com nomes
+v3: múltiplos usuários com permissões (admin/user), canais com nomes
 amigáveis para Chat IDs, e envio de teste com confirmação de senha.
 """
 
@@ -147,6 +147,12 @@ def init_db():
             conn.execute("ALTER TABLE schedules ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0")
             conn.commit()
             logger.info("Migração aplicada: coluna is_draft adicionada.")
+
+        user_cols = [c[1] for c in conn.execute("PRAGMA table_info(users)").fetchall()]
+        if "favorite_chat_id" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN favorite_chat_id TEXT")
+            conn.commit()
+            logger.info("Migração aplicada: coluna favorite_chat_id adicionada.")
 
         # Semeia a primeira conta admin — só roda se AINDA não existir
         # nenhum usuário na tabela (ou seja, só na primeira execução).
@@ -343,6 +349,17 @@ def logout():
 @login_required
 def minha_conta():
     if request.method == "POST":
+        acao = request.form.get("acao", "senha")
+
+        if acao == "favorito":
+            novo_favorito = request.form.get("favorite_chat_id") or None
+            with get_conn() as conn:
+                conn.execute("UPDATE users SET favorite_chat_id=? WHERE id=?",
+                             (novo_favorito, session["user_id"]))
+                conn.commit()
+            flash("Canal favorito atualizado! ✅", "success")
+            return redirect(url_for("minha_conta"))
+
         atual = request.form.get("current_password", "")
         nova  = request.form.get("new_password", "")
         with get_conn() as conn:
@@ -359,7 +376,12 @@ def minha_conta():
             registrar_auditoria("trocar_senha", "usuário trocou a própria senha")
             flash("Senha alterada com sucesso! ✅", "success")
             return redirect(url_for("index"))
-    return render_template("conta.html", user=session.get("username"),
+
+    with get_conn() as conn:
+        u = conn.execute("SELECT * FROM users WHERE id=?", (session["user_id"],)).fetchone()
+        canais = conn.execute("SELECT * FROM contacts ORDER BY friendly_name").fetchall()
+    return render_template("conta.html", user=session.get("username"), canais=canais,
+                           favorito_atual=u["favorite_chat_id"] if u else None,
                            is_admin=(session.get("role") == "admin"))
 
 
@@ -368,8 +390,10 @@ def minha_conta():
 @admin_required
 def usuarios():
     with get_conn() as conn:
-        rows = conn.execute("SELECT id, username, role, created_at FROM users ORDER BY id").fetchall()
-    return render_template("usuarios.html", usuarios=rows, user=session.get("username"), is_admin=True)
+        rows = conn.execute("SELECT id, username, role, favorite_chat_id, created_at FROM users ORDER BY id").fetchall()
+        canais = conn.execute("SELECT * FROM contacts ORDER BY friendly_name").fetchall()
+    return render_template("usuarios.html", usuarios=rows, canais=canais,
+                           user=session.get("username"), is_admin=True)
 
 
 @app.route("/usuarios/novo", methods=["POST"])
@@ -378,6 +402,7 @@ def usuarios_novo():
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
     role     = request.form.get("role", "user")
+    favorito = request.form.get("favorite_chat_id") or None
     if role not in ("admin", "user"):
         role = "user"
     if not username or len(password) < 6:
@@ -386,8 +411,8 @@ def usuarios_novo():
     try:
         with get_conn() as conn:
             conn.execute(
-                "INSERT INTO users (username, password_hash, role, created_at) VALUES (?,?,?,?)",
-                (username, generate_password_hash(password), role, datetime.now(TZ).isoformat())
+                "INSERT INTO users (username, password_hash, role, favorite_chat_id, created_at) VALUES (?,?,?,?,?)",
+                (username, generate_password_hash(password), role, favorito, datetime.now(TZ).isoformat())
             )
             conn.commit()
         registrar_auditoria("criar_usuario", f"'{username}' como {role}")
@@ -449,24 +474,24 @@ def auditoria():
                            filtro=filtro, user=session.get("username"), is_admin=True)
 
 
-# ── Contatos (nomes amigáveis para Chat IDs) ─────────────────────────────────
-@app.route("/contatos")
+# ── Canais de comunicação (nomes amigáveis para Chat IDs) ────────────────────
+@app.route("/canais")
 @login_required
-def contatos():
+def canais():
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM contacts ORDER BY friendly_name").fetchall()
-    return render_template("contatos.html", contatos=rows, user=session.get("username"),
+    return render_template("canais.html", canais=rows, user=session.get("username"),
                            is_admin=(session.get("role") == "admin"))
 
 
-@app.route("/contatos/novo", methods=["POST"])
+@app.route("/canais/novo", methods=["POST"])
 @login_required
-def contatos_novo():
+def canais_novo():
     chat_id = request.form.get("chat_id", "").strip()
     nome    = request.form.get("friendly_name", "").strip()
     if not chat_id or not nome:
-        flash("Preencha o Chat ID e o nome amigável.", "danger")
-        return redirect(url_for("contatos"))
+        flash("Preencha o Chat ID e o nome do canal.", "danger")
+        return redirect(url_for("canais"))
     try:
         with get_conn() as conn:
             conn.execute(
@@ -474,20 +499,20 @@ def contatos_novo():
                 (chat_id, nome, session.get("username"), datetime.now(TZ).isoformat())
             )
             conn.commit()
-        flash(f"Contato '{nome}' cadastrado! ✅", "success")
+        flash(f"Canal '{nome}' cadastrado! ✅", "success")
     except sqlite3.IntegrityError:
-        flash("Esse Chat ID já está cadastrado como contato.", "danger")
-    return redirect(url_for("contatos"))
+        flash("Esse Chat ID já está cadastrado como canal.", "danger")
+    return redirect(url_for("canais"))
 
 
-@app.route("/contatos/remover/<int:cid>", methods=["POST"])
+@app.route("/canais/remover/<int:cid>", methods=["POST"])
 @login_required
-def contatos_remover(cid):
+def canais_remover(cid):
     with get_conn() as conn:
         conn.execute("DELETE FROM contacts WHERE id=?", (cid,))
         conn.commit()
-    flash("Contato removido.", "warning")
-    return redirect(url_for("contatos"))
+    flash("Canal removido.", "warning")
+    return redirect(url_for("canais"))
 
 
 # ── Categorias ────────────────────────────────────────────────────────────────
@@ -572,6 +597,10 @@ def novo():
     with get_conn() as conn:
         contacts   = conn.execute("SELECT * FROM contacts ORDER BY friendly_name").fetchall()
         categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
+        meu_favorito = conn.execute(
+            "SELECT favorite_chat_id FROM users WHERE id=?", (session["user_id"],)
+        ).fetchone()
+        meu_favorito = meu_favorito["favorite_chat_id"] if meu_favorito else None
 
     if request.method == "POST":
         label       = request.form.get("label", "").strip()
@@ -637,7 +666,8 @@ def novo():
         flash("Rascunho salvo! ✅" if is_draft else "Agendamento criado com sucesso! ✅", "success")
         return redirect(url_for("index"))
 
-    return render_template("form.html", action="novo", data={}, contacts=contacts, categories=categories,
+    return render_template("form.html", action="novo", data={"chat_id": meu_favorito or ""},
+                           contacts=contacts, categories=categories,
                            user=session.get("username"), is_admin=(session.get("role") == "admin"))
 
 
@@ -887,7 +917,7 @@ def telegram_webhook():
             chat_id,
             f"🆔 Chat ID deste grupo: `{chat_id}`\n\n"
             "Cole este valor ao criar um agendamento, ou cadastre um nome "
-            "amigável na tela de Contatos do painel."
+            "amigável na tela de Canais do painel."
         )
     elif comando == "/status":
         with get_conn() as conn:

@@ -4,12 +4,12 @@
 {% block content %}
 <div class="topbar flex-wrap gap-2">
   <div>
-    <h5 class="mb-0 fw-bold"><i class="bi bi-calendar3 me-2 text-primary"></i>Agendamentos</h5>
-    <small class="text-muted">Mensagens recorrentes para seus grupos do Telegram</small>
+    <h5><i class="bi bi-calendar3 me-2 text-primary"></i>Agendamentos</h5>
+    <small>Mensagens recorrentes para seus canais do Telegram</small>
   </div>
   <div class="d-flex gap-2 align-items-center">
     <form method="GET" class="d-flex align-items-center gap-1">
-      <label class="form-label mb-0 small text-muted">Ordenar:</label>
+      <label class="small text-muted mb-0">Ordenar:</label>
       <select name="sort" class="form-select form-select-sm" style="width:auto" onchange="this.form.submit()">
         <option value="next" {% if sort == 'next' %}selected{% endif %}>Próximo envio</option>
         <option value="categoria" {% if sort == 'categoria' %}selected{% endif %}>Categoria</option>
@@ -23,9 +23,9 @@
   </div>
 </div>
 
-<div class="row g-3 mb-4" id="stats-row">
+<div class="row g-3 mb-4">
   <div class="col-6 col-md-4">
-    <div class="stat-card" style="background: linear-gradient(135deg,#229ED9,#1a7aab)">
+    <div class="stat-card" style="background: linear-gradient(135deg,#229ED9,#157ab3)">
       <div class="stat-num" id="st-total">—</div>
       <div class="stat-label">Total de agendamentos</div>
     </div>
@@ -47,8 +47,8 @@
 {% if not schedules %}
 <div class="card text-center py-5">
   <div class="card-body">
-    <i class="bi bi-calendar-x" style="font-size:3rem;color:#cbd5e0"></i>
-    <h6 class="mt-3 text-muted">Nenhum agendamento cadastrado</h6>
+    <i class="bi bi-calendar-x" style="font-size:2.5rem;color:var(--ink-300)"></i>
+    <h6 class="mt-3 text-muted fw-normal">Nenhum agendamento cadastrado</h6>
     <a href="{{ url_for('novo') }}" class="btn btn-brand btn-sm mt-2">
       <i class="bi bi-plus-lg me-1"></i> Criar primeiro agendamento
     </a>
@@ -58,82 +58,55 @@
 <div class="row g-3">
   {% for s in schedules %}
   <div class="col-12 col-xl-6">
-    <div class="card h-100 {% if s.is_draft %}border-secondary{% endif %}">
-      <div class="card-header d-flex align-items-center justify-content-between py-2 flex-wrap gap-1">
-        <div class="d-flex align-items-center gap-2">
-          {% if s.emoji %}<span style="font-size:1.1rem">{{ s.emoji }}</span>{% endif %}
-          <span class="text-muted" style="font-size:.78rem">#{{ s.id }}</span>
-          <strong>{{ s.label or ('Agendamento ' ~ s.id) }}</strong>
-          {% if s.is_draft %}
-            <span class="badge bg-secondary"><i class="bi bi-file-earmark-text me-1"></i>Rascunho</span>
-          {% elif s.active %}
-            {% if s.overdue %}
-              <span class="badge badge-overdue"><i class="bi bi-clock-history me-1"></i>Pendente</span>
-            {% else %}
-              <span class="badge badge-active"><i class="bi bi-check-circle me-1"></i>Ativo</span>
-            {% endif %}
-          {% else %}
-            <span class="badge badge-paused"><i class="bi bi-pause-circle me-1"></i>Pausado</span>
-          {% endif %}
-          {% if s.category_name %}
-            <span class="badge" style="background:{{ s.category_color }}20; color:{{ s.category_color }}; border:1px solid {{ s.category_color }}">
-              {{ s.category_name }}
-            </span>
+    <div class="card h-100">
+      <div class="card-body p-3 pb-2">
+        <div class="d-flex align-items-start gap-3">
+          <div class="d-flex align-items-center justify-content-center flex-shrink-0"
+               style="width:42px;height:42px;border-radius:10px;background:var(--surface-sunken);font-size:1.3rem;border:1px solid var(--border)">
+            {{ s.emoji or '📌' }}
+          </div>
+          <div class="flex-grow-1 min-w-0">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <strong style="font-size:.92rem">{{ s.label or ('Agendamento #' ~ s.id) }}</strong>
+              {% if s.is_draft %}
+                <span class="badge bg-secondary">Rascunho</span>
+              {% elif s.active %}
+                {% if s.overdue %}<span class="badge badge-overdue">Pendente</span>
+                {% else %}<span class="badge badge-active">Ativo</span>{% endif %}
+              {% else %}
+                <span class="badge badge-paused">Pausado</span>
+              {% endif %}
+              {% if s.category_name %}
+                <span class="badge" style="background:{{ s.category_color }}18; color:{{ s.category_color }}">
+                  {{ s.category_name }}
+                </span>
+              {% endif %}
+            </div>
+            <div class="text-muted" style="font-size:.75rem">
+              {% if s.friendly_name %}{{ s.friendly_name }} · {% endif %}<code style="font-size:.7rem">{{ s.chat_id }}</code>
+            </div>
+          </div>
+          {% if not s.is_draft %}
+          <span class="badge badge-period flex-shrink-0">{{ s.period_days }}d</span>
           {% endif %}
         </div>
-        {% if not s.is_draft %}
-        <span class="badge badge-period">
-          <i class="bi bi-arrow-repeat me-1"></i>{{ s.period_days }} dias
-        </span>
-        {% endif %}
-      </div>
-      <div class="card-body py-2">
-        <div class="schedule-msg mb-2">{{ s.message }}</div>
+
+        <div class="schedule-msg my-2">{{ s.message }}</div>
+
         {% if s.is_draft %}
-        <div class="alert alert-secondary py-2 px-3 mb-2" style="font-size:.8rem">
-          <i class="bi bi-info-circle me-1"></i>
-          Sem data definida ainda. Edite e preencha o período/data para ativar.
+        <div class="text-muted d-flex align-items-center gap-1" style="font-size:.78rem">
+          <i class="bi bi-info-circle"></i> Sem data — edite para ativar
         </div>
         {% else %}
-        <div class="row g-2" style="font-size:.8rem; color:#6b7280">
-          <div class="col-6">
-            <i class="bi bi-calendar-event me-1"></i>
-            <strong>Início:</strong> {{ s.start_display }}
-          </div>
-          <div class="col-6">
-            <i class="bi bi-calendar-check me-1"></i>
-            <strong>Fim:</strong> {{ s.end_display }}
-          </div>
-          <div class="col-6">
-            <i class="bi bi-send me-1"></i>
-            <strong>Último envio:</strong>
-            {% if s.last_sent %}
-              {{ s.last_sent | replace('-', '/') }}
-            {% else %}
-              Nunca
-            {% endif %}
-          </div>
-          <div class="col-6">
-            <i class="bi bi-arrow-right-circle me-1 {% if s.overdue %}text-warning{% else %}text-success{% endif %}"></i>
-            <strong>Próximo:</strong>
-            <span class="{% if s.overdue %}text-warning fw-bold{% endif %}">{{ s.next_display }} às {{ s.send_time }}</span>
-          </div>
+        <div class="d-flex flex-wrap gap-3 text-muted" style="font-size:.76rem">
+          <span><i class="bi bi-calendar-event me-1"></i>{{ s.start_display }}</span>
+          <span><i class="bi bi-calendar-check me-1"></i>{{ s.end_display }}</span>
+          <span class="{% if s.overdue %}text-warning fw-semibold{% endif %}">
+            <i class="bi bi-arrow-right-circle me-1"></i>{{ s.next_display }} às {{ s.send_time }}
+          </span>
         </div>
         {% endif %}
-        <div class="row g-2 mt-1" style="font-size:.8rem; color:#6b7280">
-          <div class="col-12">
-            <i class="bi bi-telegram me-1"></i>
-            <strong>Chat:</strong>
-            {% if s.friendly_name %}
-              {{ s.friendly_name }} <code class="text-muted" style="font-size:.75em">{{ s.chat_id }}</code>
-            {% else %}
-              <code>{{ s.chat_id }}</code>
-            {% endif %}
-          </div>
-          <div class="col-12 text-muted" style="font-size:.75rem">
-            <i class="bi bi-person me-1"></i>criado por {{ s.created_by or '—' }}
-          </div>
-        </div>
+        <div class="text-muted mt-1" style="font-size:.72rem">criado por {{ s.created_by or '—' }}</div>
       </div>
       <div class="card-footer bg-white border-top d-flex flex-wrap gap-2 py-2">
         <a href="{{ url_for('editar', sid=s.id) }}" class="btn btn-outline-secondary btn-sm">
@@ -141,25 +114,19 @@
         </a>
         {% if not s.is_draft %}
         <a href="{{ url_for('toggle', sid=s.id) }}" class="btn btn-sm {% if s.active %}btn-outline-warning{% else %}btn-outline-success{% endif %}">
-          {% if s.active %}
-            <i class="bi bi-pause"></i> Pausar
-          {% else %}
-            <i class="bi bi-play"></i> Ativar
-          {% endif %}
+          {% if s.active %}<i class="bi bi-pause"></i> Pausar{% else %}<i class="bi bi-play"></i> Ativar{% endif %}
         </a>
         {% endif %}
         <button type="button" class="btn btn-outline-primary btn-sm" onclick="abrirTeste({{ s.id }})">
           <i class="bi bi-send-check"></i> Testar
         </button>
         <a href="{{ url_for('log_schedule', sid=s.id) }}" class="btn btn-outline-info btn-sm">
-          <i class="bi bi-clock-history"></i> Log
+          <i class="bi bi-clock-history"></i>
         </a>
         {% if is_admin %}
         <form method="POST" action="{{ url_for('remover', sid=s.id) }}" class="ms-auto"
               onsubmit="return confirm('Remover o agendamento #{{ s.id }}? Esta ação é permanente.')">
-          <button type="submit" class="btn btn-outline-danger btn-sm">
-            <i class="bi bi-trash"></i>
-          </button>
+          <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></button>
         </form>
         {% endif %}
       </div>
@@ -169,7 +136,6 @@
 </div>
 {% endif %}
 
-<!-- Modal de confirmação para envio de teste -->
 <div class="modal fade" id="testModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -180,18 +146,15 @@
         </div>
         <div class="modal-body">
           <p class="text-muted small mb-3">
-            Isso envia a mensagem real para o grupo/canal agora mesmo, marcada
-            com <code>🧪 [TESTE]</code> no início. Não afeta o agendamento nem
-            conta como o envio recorrente.
+            Envia a mensagem real para o canal agora, marcada com <code>🧪 [TESTE]</code>.
+            Não afeta o agendamento nem conta como envio recorrente.
           </p>
-          <label class="form-label fw-semibold">Confirme sua senha para continuar</label>
+          <label class="form-label">Confirme sua senha para continuar</label>
           <input type="password" name="password" class="form-control" required autocomplete="current-password">
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-          <button type="submit" class="btn btn-brand">
-            <i class="bi bi-send-check me-1"></i> Enviar teste
-          </button>
+          <button type="submit" class="btn btn-brand"><i class="bi bi-send-check me-1"></i> Enviar teste</button>
         </div>
       </form>
     </div>
@@ -206,7 +169,6 @@ fetch('/api/status').then(r => r.json()).then(d => {
   document.getElementById('st-ativos').textContent = d.ativos;
   document.getElementById('st-hoje').textContent = d.enviados_hoje;
 });
-
 function abrirTeste(id) {
   document.getElementById('testForm').action = '/testar/' + id;
   new bootstrap.Modal(document.getElementById('testModal')).show();
