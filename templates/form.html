@@ -19,46 +19,52 @@
     <div class="card-body p-4">
       <form method="POST">
 
-        <div class="d-flex align-items-center justify-content-end gap-2 mb-4">
-          <label class="form-check-label small text-muted" for="is_draft" style="font-size:.8rem">
-            📝 Rascunho — salvar sem data definida
-          </label>
-          <div class="form-check form-switch mb-0">
-            <input class="form-check-input" type="checkbox" name="is_draft" id="is_draft" role="switch"
-                   {% if data.get('is_draft') %}checked{% endif %} onchange="toggleRascunho()">
-          </div>
-        </div>
-
-        <div class="row g-3 mb-3">
-          <div class="col-sm-6">
-            <label class="form-label">Rótulo <span class="text-muted fw-normal">(opcional)</span></label>
-            <input type="text" name="label" class="form-control"
-                   placeholder="ex: reuniao_semanal" value="{{ data.get('label', '') }}">
-          </div>
-          <div class="col-sm-6">
-            <label class="form-label">Canal de comunicação <span class="text-danger">*</span></label>
-            {% if action != 'editar' %}
-            <select id="contact_picker" class="form-select mb-2"
-                    onchange="document.getElementById('chat_id').value = this.value">
-              <option value="">— escolher um canal salvo —</option>
-              {% for c in contacts %}
-              <option value="{{ c.chat_id }}" {% if data.get('chat_id') == c.chat_id %}selected{% endif %}>
-                {{ c.friendly_name }} ({{ c.chat_id }})
-              </option>
-              {% endfor %}
-            </select>
-            {% endif %}
-            <input type="text" name="chat_id" id="chat_id" class="form-control font-mono"
-                   placeholder="ou cole o Chat ID: -1001234567890"
-                   value="{{ data.get('chat_id', '') }}"
-                   {% if action == 'editar' %}readonly{% endif %} required>
-            <div class="form-text">
-              {% if action != 'editar' %}
-                Sem o ID ainda? Envie <code>/chatid</code> no canal, ou cadastre em
-                <a href="{{ url_for('canais') }}" target="_blank">Canais</a>.
-              {% endif %}
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <label class="form-label mb-0">Rótulo <span class="text-muted fw-normal">(opcional)</span></label>
+          <div class="d-flex align-items-center gap-2">
+            <label class="small text-muted mb-0" for="is_draft" style="font-size:.78rem">
+              📝 Rascunho — salvar sem data definida
+            </label>
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" name="is_draft" id="is_draft" role="switch"
+                     {% if data.get('is_draft') %}checked{% endif %} onchange="toggleRascunho()">
             </div>
           </div>
+        </div>
+        <input type="text" name="label" class="form-control mb-3"
+               placeholder="ex: reuniao_semanal" value="{{ data.get('label', '') }}">
+
+        <label class="form-label">Canal de comunicação <span class="text-danger">*</span></label>
+        {% if action != 'editar' %}
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <select id="contact_picker" class="form-select flex-grow-1"
+                  onchange="document.getElementById('chat_id').value = this.value">
+            <option value="">— escolher um canal salvo —</option>
+            {% for c in contacts %}
+            <option value="{{ c.chat_id }}" {% if data.get('chat_id') == c.chat_id %}selected{% endif %}>
+              {% if c.is_principal %}⭐ {% endif %}{{ c.friendly_name }} ({{ c.chat_id }})
+            </option>
+            {% endfor %}
+          </select>
+          <div class="d-flex align-items-center gap-1 flex-shrink-0" style="font-size:.76rem">
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" id="canal_manual_toggle" role="switch"
+                     onchange="toggleCanalManual()">
+            </div>
+            <span class="text-muted text-nowrap">Selecione outro canal</span>
+          </div>
+        </div>
+        <input type="text" name="chat_id" id="chat_id" class="form-control font-mono mb-3" style="display:none"
+               placeholder="Cole o Chat ID: -1001234567890" value="{{ data.get('chat_id', '') }}">
+        {% else %}
+        <input type="text" name="chat_id" id="chat_id" class="form-control font-mono mb-3"
+               value="{{ data.get('chat_id', '') }}" readonly>
+        {% endif %}
+        <div class="form-text mb-3" style="margin-top:-.6rem">
+          {% if action != 'editar' %}
+            Sem o ID ainda? Envie <code>/chatid</code> no canal, ou cadastre em
+            <a href="{{ url_for('canais') }}" target="_blank">Canais</a>.
+          {% endif %}
         </div>
 
         <div class="d-flex gap-3 mb-3">
@@ -76,50 +82,42 @@
           <div style="width:84px" class="flex-shrink-0">
             <label class="form-label">Emoji</label>
             <input type="text" name="emoji" id="emoji" class="form-control text-center"
-                   style="font-size:1.15rem" maxlength="8" placeholder="🎯"
-                   value="{{ data.get('emoji', '') }}">
+                   style="font-size:1.15rem" maxlength="8" placeholder="🎯" value="{{ data.get('emoji', '') }}">
           </div>
         </div>
 
         <div id="camposComData">
-          <div class="row g-3 mb-3">
-            <div class="col-sm-8">
-              <label class="form-label">Período de repetição, em dias <span class="text-danger">*</span></label>
-              <div class="d-flex gap-2 flex-wrap mb-2">
-                {% for p in [7, 14, 21, 28, 30, 56, 60, 90] %}
-                <button type="button" class="btn btn-outline-primary btn-sm period-btn py-0 px-2"
-                        style="font-size:.76rem" data-val="{{ p }}">{{ p }}d</button>
-                {% endfor %}
-              </div>
-              <input type="number" name="period_days" id="period_days" class="form-control"
-                     placeholder="Ex: 7" min="1" value="{{ data.get('period_days', '') }}">
-            </div>
-            <div class="col-sm-4">
-              <label class="form-label">Horário</label>
-              <input type="time" name="send_time" class="form-control"
-                     value="{{ data.get('send_time', '08:00') }}">
-            </div>
+          <label class="form-label">Período de repetição, em dias <span class="text-danger">*</span></label>
+          <div class="d-flex gap-2 flex-wrap align-items-center mb-3">
+            {% for p in [7, 14, 21, 28, 30, 56, 60, 90] %}
+            <button type="button" class="btn btn-outline-primary btn-sm period-btn py-1 px-2"
+                    style="font-size:.76rem" data-val="{{ p }}">{{ p }}d</button>
+            {% endfor %}
+            <input type="number" name="period_days" id="period_days" class="form-control flex-grow-1"
+                   style="min-width:110px;max-width:160px" placeholder="Outro nº de dias" min="1"
+                   value="{{ data.get('period_days', '') }}">
           </div>
 
           <div class="row g-3 mb-3">
-            <div class="col-sm-6">
+            <div class="col-sm-4">
               <label class="form-label">Data de início <span class="text-danger">*</span></label>
               <input type="date" name="start_date" class="form-control" value="{{ data.get('start_date', '') }}">
             </div>
-            <div class="col-sm-6">
+            <div class="col-sm-4">
               <label class="form-label">Data de fim <span class="text-muted fw-normal">(opcional)</span></label>
               <input type="date" name="end_date" class="form-control" value="{{ data.get('end_date', '') }}">
-              <div class="form-text">Vazio = repete indefinidamente.</div>
+            </div>
+            <div class="col-sm-4">
+              <label class="form-label">Horário</label>
+              <input type="time" name="send_time" class="form-control" value="{{ data.get('send_time', '08:00') }}">
             </div>
           </div>
         </div>
 
-        <div class="mb-4">
-          <label class="form-label">Mensagem <span class="text-danger">*</span></label>
-          <textarea name="message" class="form-control" rows="5"
-                    placeholder="Digite a mensagem que será enviada...&#10;Suporta *negrito* _itálico_ `código`"
-                    required>{{ data.get('message', '') }}</textarea>
-        </div>
+        <label class="form-label">Mensagem <span class="text-danger">*</span></label>
+        <textarea name="message" class="form-control mb-4" rows="5"
+                  placeholder="Digite a mensagem que será enviada...&#10;Suporta *negrito* _itálico_ `código`"
+                  required>{{ data.get('message', '') }}</textarea>
 
         <div class="d-flex gap-2">
           <button type="submit" class="btn btn-brand px-4">
@@ -148,5 +146,21 @@ function toggleRascunho() {
   campos.style.pointerEvents = checked ? 'none' : 'auto';
 }
 toggleRascunho();
+
+function toggleCanalManual() {
+  const manual = document.getElementById('canal_manual_toggle');
+  const picker = document.getElementById('contact_picker');
+  const input  = document.getElementById('chat_id');
+  if (!manual) return;
+  if (manual.checked) {
+    picker.style.display = 'none';
+    input.style.display = 'block';
+    input.value = '';
+    input.focus();
+  } else {
+    picker.style.display = 'block';
+    input.style.display = 'none';
+  }
+}
 </script>
 {% endblock %}

@@ -4,74 +4,56 @@
 {% block content %}
 <div class="topbar">
   <div>
-    <h5 class="mb-0 fw-bold"><i class="bi bi-tags me-2 text-primary"></i>Categorias</h5>
-    <small class="text-muted">Organize seus agendamentos por tipo</small>
+    <h5><i class="bi bi-tags me-2 text-primary"></i>Categorias</h5>
+    <small>Organize seus agendamentos por tipo</small>
   </div>
   <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">
     <i class="bi bi-arrow-left me-1"></i> Voltar
   </a>
 </div>
 
-<div class="row g-3">
-  <div class="col-12 col-lg-7">
-    <div class="card">
-      <div class="card-header">Categorias cadastradas</div>
+<div class="page-narrow mx-auto">
+  <div class="card">
+    <div class="card-body p-4">
+
       {% if not categorias %}
-      <div class="card-body text-center text-muted py-4">
-        <i class="bi bi-tag" style="font-size:2rem"></i>
-        <p class="mt-2">Nenhuma categoria cadastrada ainda.</p>
+      <div class="text-center text-muted py-4">
+        <i class="bi bi-tag" style="font-size:2rem;color:var(--ink-300)"></i>
+        <p class="mt-2 mb-0 small">Nenhuma categoria cadastrada ainda.</p>
       </div>
       {% else %}
-      <div class="table-responsive">
-        <table class="table table-sm table-hover mb-0">
-          <thead class="table-light">
-            <tr><th>Categoria</th><th></th></tr>
-          </thead>
-          <tbody>
-            {% for c in categorias %}
-            <tr>
-              <td>
-                <span class="badge" style="background:{{ c.color }}20; color:{{ c.color }}; border:1px solid {{ c.color }}">
-                  {{ c.name }}
-                </span>
-              </td>
-              <td class="text-end">
-                {% if is_admin %}
-                <form method="POST" action="{{ url_for('categorias_remover', cid=c.id) }}" class="d-inline"
-                      onsubmit="return confirm('Remover a categoria {{ c.name }}? Agendamentos que a usam ficarão sem categoria.')">
-                  <button type="submit" class="btn btn-outline-danger btn-sm">
-                    <i class="bi bi-trash"></i>
-                  </button>
-                </form>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      <div class="d-flex flex-wrap gap-2 mb-4">
+        {% for c in categorias %}
+        <div class="d-inline-flex align-items-center gap-2 rounded-pill"
+             style="background:{{ c.color }}18; border:1.5px solid {{ c.color }}; padding:.35rem .4rem .35rem .85rem">
+          <span class="fw-semibold" style="color:{{ c.color }}; font-size:.83rem">{{ c.name }}</span>
+          {% if is_admin %}
+          <form method="POST" action="{{ url_for('categorias_remover', cid=c.id) }}" class="d-inline mb-0"
+                onsubmit="return confirm('Remover a categoria {{ c.name }}? Agendamentos que a usam ficarão sem categoria.')">
+            <button type="submit" class="btn btn-sm p-0 d-flex align-items-center justify-content-center"
+                    style="width:20px;height:20px;border-radius:50%;background:{{ c.color }}25;border:none;color:{{ c.color }}"
+                    title="Remover">
+              <i class="bi bi-x" style="font-size:.9rem"></i>
+            </button>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
       </div>
       {% endif %}
-    </div>
-  </div>
 
-  <div class="col-12 col-lg-5">
-    <div class="card">
-      <div class="card-header">Nova categoria</div>
-      <div class="card-body">
-        <form method="POST" action="{{ url_for('categorias_novo') }}">
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Nome</label>
-            <input type="text" name="name" class="form-control" placeholder="ex: Sorteios" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Cor</label>
-            <input type="color" name="color" class="form-control form-control-color" value="#229ED9">
-          </div>
-          <button type="submit" class="btn btn-brand w-100">
-            <i class="bi bi-plus-lg me-1"></i> Criar categoria
-          </button>
-        </form>
-      </div>
+      <hr class="my-4" style="border-color:var(--border)">
+
+      <div class="fw-semibold mb-2" style="font-size:.82rem">Nova categoria</div>
+      <form method="POST" action="{{ url_for('categorias_novo') }}" class="d-flex gap-2 align-items-end">
+        <input type="color" name="color" class="form-control form-control-color flex-shrink-0"
+               value="#229ED9" style="width:44px;height:38px;padding:3px">
+        <input type="text" name="name" class="form-control" placeholder="ex: Sorteios" required>
+        <button type="submit" class="btn btn-brand text-nowrap px-3">
+          <i class="bi bi-plus-lg"></i> Criar
+        </button>
+      </form>
+
     </div>
   </div>
 </div>

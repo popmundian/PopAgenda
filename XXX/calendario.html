@@ -20,15 +20,14 @@
   .cal-day-num { font-size: .76rem; font-weight: 600; color: var(--ink-700); margin-bottom: .3rem; }
   .cal-day-today .cal-day-num { color: var(--brand-dark); font-weight: 800; }
   .cal-event {
-    display: block; font-size: .68rem; padding: .2rem .4rem; margin-bottom: 3px;
-    border: none; border-radius: 5px; font-weight: 600;
-    text-decoration: none; box-shadow: 0 1px 2px rgba(22,32,46,.12);
+    display: block; font-size: .66rem; padding: .12rem .32rem; margin-bottom: 2px;
+    background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--brand);
+    border-radius: 4px; color: var(--ink-700); text-decoration: none;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    transition: transform .08s, box-shadow .08s;
   }
-  .cal-event:hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(22,32,46,.18); }
-  .cal-event-paused { opacity: .4; filter: grayscale(.3); }
-  .cal-more { font-size: .64rem; color: var(--ink-500); padding: 0 .3rem; font-weight: 600; }
+  .cal-event:hover { background: var(--brand-light); color: var(--ink-900); }
+  .cal-event-paused { opacity: .5; border-left-color: var(--ink-300); }
+  .cal-more { font-size: .64rem; color: var(--ink-500); padding: 0 .3rem; }
   .cal-nav-label { min-width: 148px; text-align: center; font-weight: 700; font-size: .88rem; }
   @media (max-width: 768px) {
     .cal-day { min-height: 64px; }
@@ -74,7 +73,7 @@
         <div class="cal-day-num">{{ dia.day }}</div>
         {% for ev in eventos[:3] %}
         <a href="{{ url_for('editar', sid=ev.id) }}" class="cal-event {% if not ev.active %}cal-event-paused{% endif %}"
-           title="{{ ev.label }}" style="background:{{ ev.cor_fundo }}; color:{{ ev.cor_texto }}">
+           title="{{ ev.label }}" style="{% if ev.cat_color %}border-left-color:{{ ev.cat_color }}{% endif %}">
           {{ ev.emoji }} {{ ev.label }}
         </a>
         {% endfor %}
@@ -88,8 +87,8 @@
 </div>
 <div class="d-flex gap-3 mt-3 text-muted flex-wrap" style="font-size:.76rem">
   <span><span class="badge badge-active">&nbsp;</span> hoje</span>
-  <span><span class="cal-event d-inline-block" style="padding:.15rem .6rem;background:var(--brand)">&nbsp;</span> ativo (cor = categoria)</span>
-  <span><span class="cal-event cal-event-paused d-inline-block" style="padding:.15rem .6rem;background:var(--brand)">&nbsp;</span> pausado</span>
+  <span><span class="cal-event d-inline-block" style="padding:.1rem .5rem">&nbsp;</span> ativo</span>
+  <span><span class="cal-event cal-event-paused d-inline-block" style="padding:.1rem .5rem">&nbsp;</span> pausado</span>
 </div>
 {% endif %}
 {% endblock %}
