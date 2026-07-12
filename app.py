@@ -155,6 +155,12 @@ def init_db():
             conn.commit()
             logger.info("Migração aplicada: coluna favorite_chat_id adicionada.")
 
+        contact_cols = [c[1] for c in conn.execute("PRAGMA table_info(contacts)").fetchall()]
+        if "is_principal" not in contact_cols:
+            conn.execute("ALTER TABLE contacts ADD COLUMN is_principal INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+            logger.info("Migração aplicada: coluna is_principal adicionada.")
+
         # Semeia a primeira conta admin — só roda se AINDA não existir
         # nenhum usuário na tabela (ou seja, só na primeira execução).
         existing = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
@@ -291,6 +297,32 @@ def get_contacts_map():
     return {r["chat_id"]: r["friendly_name"] for r in rows}
 
 
+def canal_padrao_do_usuario(user_id) -> str | None:
+    """Hierarquia de canal padrão: favorito pessoal do usuário primeiro;
+    se ele não tiver um, cai pro canal 'principal' definido pelo admin;
+    se nenhum dos dois existir, retorna None (formulário fica vazio)."""
+    with get_conn() as conn:
+        u = conn.execute("SELECT favorite_chat_id FROM users WHERE id=?", (user_id,)).fetchone()
+        if u and u["favorite_chat_id"]:
+            return u["favorite_chat_id"]
+        principal = conn.execute("SELECT chat_id FROM contacts WHERE is_principal=1").fetchone()
+        return principal["chat_id"] if principal else None
+
+
+def cor_texto_contraste(hex_color: str) -> str:
+    """Dado um fundo colorido, decide se o texto deve ser claro ou escuro
+    pra continuar legível — evita texto branco sobre amarelo claro, etc."""
+    try:
+        h = (hex_color or "").lstrip("#")
+        if len(h) != 6:
+            return "#ffffff"
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        luminancia = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+        return "#1a2332" if luminancia > 0.6 else "#ffffff"
+    except (ValueError, TypeError):
+        return "#ffffff"
+
+
 # ── Telegram: envio simples via HTTP ─────────────────────────────────────────
 def enviar_telegram(chat_id: str, texto: str) -> tuple[bool, str]:
     if not TOKEN:
@@ -317,13 +349,19 @@ def alertar_admin(texto: str):
 
 
 def registrar_auditoria(action: str, details: str = "", actor: str = None):
+    """Grava uma linha no log de auditoria. Propositalmente NUNCA deixa uma
+    falha aqui (ex.: banco ocupado por um instante) quebrar a ação real do
+    usuário — na pior hipótese, perde-se um registro de log, não a ação."""
     actor = actor or session.get("username", "sistema")
-    with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO audit_log (timestamp, actor, action, details) VALUES (?,?,?,?)",
-            (datetime.now(TZ).isoformat(), actor, action, details)
-        )
-        conn.commit()
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO audit_log (timestamp, actor, action, details) VALUES (?,?,?,?)",
+                (datetime.now(TZ).isoformat(), actor, action, details)
+            )
+            conn.commit()
+    except Exception as exc:
+        logger.error("Falha ao gravar auditoria (%s/%s): %s", action, actor, exc)
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
@@ -532,8 +570,7 @@ def calendario():
         if is_admin:
             rows = conn.execute("SELECT * FROM schedules WHERE is_draft=0").fetchall()
         else:
-            u = conn.execute("SELECT favorite_chat_id FROM users WHERE id=?", (session["user_id"],)).fetchone()
-            meu_canal = u["favorite_chat_id"] if u else None
+            meu_canal = canal_padrao_do_usuario(session["user_id"])
             rows = conn.execute(
                 "SELECT * FROM schedules WHERE is_draft=0 AND chat_id=?", (meu_canal,)
             ).fetchall() if meu_canal else []
@@ -544,13 +581,15 @@ def calendario():
         start = date.fromisoformat(r["start_date"])
         end   = date.fromisoformat(r["end_date"]) if r["end_date"] else None
         cat = categories_map.get(r["category_id"])
+        cor_fundo = cat["color"] if cat else "#229ED9"
         for d in occurrences_in_range(start, r["period_days"], end, intervalo_inicio, intervalo_fim):
             eventos_por_dia.setdefault(d, []).append({
                 "id": r["id"],
                 "label": r["label"] or f"Agendamento #{r['id']}",
                 "emoji": r["emoji"] or "📌",
                 "active": r["active"],
-                "cat_color": cat["color"] if cat else None,
+                "cor_fundo": cor_fundo,
+                "cor_texto": cor_texto_contraste(cor_fundo),
             })
 
     prev_ano, prev_mes = (ano - 1, 12) if mes == 1 else (ano, mes - 1)
@@ -570,7 +609,7 @@ def calendario():
 @login_required
 def canais():
     with get_conn() as conn:
-        rows = conn.execute("SELECT * FROM contacts ORDER BY friendly_name").fetchall()
+        rows = conn.execute("SELECT * FROM contacts ORDER BY is_principal DESC, friendly_name").fetchall()
     return render_template("canais.html", canais=rows, user=session.get("username"),
                            is_admin=(session.get("role") == "admin"))
 
@@ -605,6 +644,32 @@ def canais_remover(cid):
         conn.commit()
     registrar_auditoria("remover_canal", row["friendly_name"] if row else f"id={cid}")
     flash("Canal removido.", "warning")
+    return redirect(url_for("canais"))
+
+
+@app.route("/canais/principal/<int:cid>", methods=["POST"])
+@admin_required
+def canais_principal(cid):
+    with get_conn() as conn:
+        atual = conn.execute("SELECT is_principal, friendly_name FROM contacts WHERE id=?", (cid,)).fetchone()
+        if not atual:
+            flash("Canal não encontrado.", "danger")
+            return redirect(url_for("canais"))
+        if atual["is_principal"]:
+            conn.execute("UPDATE contacts SET is_principal=0 WHERE id=?", (cid,))
+        else:
+            conn.execute("UPDATE contacts SET is_principal=0")  # só um principal por vez
+            conn.execute("UPDATE contacts SET is_principal=1 WHERE id=?", (cid,))
+        conn.commit()
+
+    # registrar_auditoria abre sua própria conexão — só chamar DEPOIS do
+    # commit acima, senão as duas conexões disputam o lock do arquivo.
+    if atual["is_principal"]:
+        registrar_auditoria("desmarcar_canal_principal", atual["friendly_name"])
+        flash(f"'{atual['friendly_name']}' não é mais o canal principal.", "info")
+    else:
+        registrar_auditoria("marcar_canal_principal", atual["friendly_name"])
+        flash(f"'{atual['friendly_name']}' agora é o canal principal. ⭐", "success")
     return redirect(url_for("canais"))
 
 
@@ -657,6 +722,13 @@ def categorias_remover(cid):
 @login_required
 def index():
     sort = request.args.get("sort", "next")
+
+    view = request.args.get("view")
+    if view in ("cards", "inline", "details"):
+        session["view_mode"] = view
+    else:
+        view = session.get("view_mode", "cards")
+
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM schedules ORDER BY active DESC, id DESC").fetchall()
         categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
@@ -680,7 +752,7 @@ def index():
         schedules.sort(key=lambda s: (s["is_draft"], s["next_date"] or "9999-99-99"))
 
     return render_template("index.html", schedules=schedules, categories=categories,
-                           sort=sort, user=session.get("username"),
+                           sort=sort, view=view, user=session.get("username"),
                            is_admin=(session.get("role") == "admin"))
 
 
@@ -688,12 +760,9 @@ def index():
 @login_required
 def novo():
     with get_conn() as conn:
-        contacts   = conn.execute("SELECT * FROM contacts ORDER BY friendly_name").fetchall()
+        contacts   = conn.execute("SELECT * FROM contacts ORDER BY is_principal DESC, friendly_name").fetchall()
         categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
-        meu_favorito = conn.execute(
-            "SELECT favorite_chat_id FROM users WHERE id=?", (session["user_id"],)
-        ).fetchone()
-        meu_favorito = meu_favorito["favorite_chat_id"] if meu_favorito else None
+    meu_canal_padrao = canal_padrao_do_usuario(session["user_id"])
 
     if request.method == "POST":
         label       = request.form.get("label", "").strip()
@@ -759,7 +828,7 @@ def novo():
         flash("Rascunho salvo! ✅" if is_draft else "Agendamento criado com sucesso! ✅", "success")
         return redirect(url_for("index"))
 
-    return render_template("form.html", action="novo", data={"chat_id": meu_favorito or ""},
+    return render_template("form.html", action="novo", data={"chat_id": meu_canal_padrao or ""},
                            contacts=contacts, categories=categories,
                            user=session.get("username"), is_admin=(session.get("role") == "admin"))
 
