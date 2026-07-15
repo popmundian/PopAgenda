@@ -160,6 +160,271 @@ GitHub em vez de usar git pull local): `app.py`, `templates/form.html`,
 
 ---
 
+## 🆕 Atualização v6 — redesign, canal favorito, e "Canais de comunicação"
+
+Também não-destrutiva.
+
+### Redesign visual
+
+Reformulei a tela de **Novo Agendamento** (era a mais apertada e desalinhada):
+- Removi a paleta de sugestões de emoji — agora é só um campo compacto onde
+  você mesmo digita/cola o emoji, do seu jeito
+- O toggle de rascunho virou um controle pequeno e discreto, alinhado à
+  direita, em vez do banner grande de antes
+- A tela agora tem largura máxima (não fica esticada e desalinhada em
+  monitores grandes)
+- Tipografia nova (Plus Jakarta Sans) e paleta de cores refinada em todo o
+  painel — cards, badges e espaçamento mais consistentes
+
+### "Contatos" agora é "Canais de comunicação"
+
+Renomeei em todo o painel — é mais preciso pro que a lista realmente é (não
+são pessoas, são grupos/canais do Telegram). A URL mudou de `/contatos`
+para `/canais`.
+
+### Canal favorito por usuário
+
+Ao criar um usuário (Admin → Usuários), dá pra escolher um **canal
+favorito** — o campo "Canal" do formulário de novo agendamento já vem
+preenchido com ele automaticamente. Cada pessoa também pode trocar o
+próprio favorito a qualquer momento em **Minha conta**. Pra usar outro
+canal pontualmente, é só trocar no formulário ou escolher outro da lista.
+
+### Como aplicar
+
+```bash
+cd PopAgenda
+git pull
+```
+Reload na aba Web. Sem dependência nova.
+
+**Se for subir manualmente pelo GitHub** (upload de arquivo em vez de git
+pull local), estes mudaram: `app.py`, `templates/base.html`,
+`templates/form.html`, `templates/index.html`, `templates/usuarios.html`,
+`templates/conta.html`. E **este arquivo foi removido**:
+`templates/contatos.html` (virou `templates/canais.html` — se você tiver os
+dois no repositório, apague o `contatos.html` antigo pra não confundir).
+
+---
+
+## 🆕 Atualização v7 — calendário, e correção de permissão
+
+Também não-destrutiva. Inclui uma **correção de segurança** — leia primeiro.
+
+### 🔒 Correção: exclusão de Canais e Categorias
+
+Usuários comuns conseguiam apagar Canais de comunicação e Categorias — só
+deveria ser o admin, igual já era pra agendamentos. Corrigido nas duas
+telas (backend bloqueia, e o botão de apagar nem aparece mais pra quem não
+é admin).
+
+### Calendário
+
+Tela nova **Calendário** — visão mensal com navegação (mês anterior/
+seguinte, atalho "Hoje"). Cada dia mostra os eventos que caem nele
+(emoji + rótulo), eventos pausados aparecem esmaecidos, e clicar em um
+evento leva direto pra edição dele.
+
+- **Admin**: vê os eventos de **todos** os canais juntos
+- **Usuário comum**: vê **só** os eventos do canal favorito dele (o mesmo
+  configurado em Minha conta). Sem favorito definido, mostra uma tela
+  pedindo pra configurar, em vez de aparecer vazio sem explicação
+
+Rascunhos (sem data) nunca aparecem no calendário — não têm data pra
+mostrar.
+
+### Como aplicar
+
+```bash
+cd PopAgenda
+git pull
+```
+Reload na aba Web. Sem dependência nova.
+
+**Se for subir manualmente pelo GitHub**: `app.py`, `templates/base.html`,
+`templates/canais.html`, `templates/categorias.html`, e o novo
+`templates/calendario.html`.
+
+---
+
+## 🆕 Atualização v8 — destaque visual, canal principal, e correção de bug
+
+Também não-destrutiva. Inclui uma **correção de bug real** — leia primeiro.
+
+### 🐛 Correção: "database is locked" ao marcar canal principal
+
+Ao implementar a marcação de canal principal, uma chamada de auditoria
+acontecia antes do commit da transação principal, e as duas disputavam o
+mesmo arquivo do banco. Encontrei isso nos meus próprios testes antes de
+te entregar, corrigi, e also revisei todas as OUTRAS 16 chamadas de
+auditoria do sistema pra confirmar que nenhuma tinha o mesmo problema
+(só essa tinha). Também blindei a função de auditoria: se algo parecido
+escapar no futuro, na pior hipótese perde-se um registro de log — a ação
+do usuário nunca mais quebra por causa disso.
+
+### Canal principal
+
+Em **Canais de comunicação**, o admin agora marca um canal como ⭐
+**principal** (só um por vez — marcar outro desmarca automaticamente o
+anterior). Esse canal principal vira o padrão pra qualquer usuário que
+ainda não tenha um canal **favorito** pessoal definido — tanto no
+formulário de novo agendamento quanto no calendário. A hierarquia é:
+favorito pessoal → canal principal → vazio.
+
+### Calendário com mais destaque
+
+Os eventos agora aparecem com a cor da categoria **preenchida** (não só
+uma bordinha), com o texto trocando entre claro/escuro automaticamente
+pra continuar legível em qualquer cor escolhida.
+
+### Categorias e Canais redesenhados
+
+Categorias virou uma nuvem de chips coloridos em vez de tabela. Canais
+virou uma lista de linhas mais ricas (com o selo de principal). Os dois
+ficaram mais compactos e organizados.
+
+### Formulário de Novo Agendamento reorganizado
+
+Segui o layout que você desenhou: rótulo e o toggle de rascunho dividem a
+mesma linha, o seletor de canal agora tem um toggle "Selecione outro
+canal" que só revela o campo manual quando necessário (fica escondido
+por padrão), categoria+emoji lado a lado, período com os botões e o campo
+manual na mesma linha, e início/fim/horário juntos numa linha só.
+
+### Como aplicar
+
+```bash
+cd PopAgenda
+git pull
+```
+Reload na aba Web. Sem dependência nova.
+
+**Se for manual pelo GitHub**: `app.py`, `templates/base.html`,
+`templates/form.html`, `templates/canais.html`, `templates/categorias.html`,
+`templates/calendario.html`.
+
+
+
+---
+
+## 🆕 Atualização v9 — três modos de visualização
+
+Não-destrutiva, sem migração de banco nesta.
+
+Resolvido o pedido dos "modos de visualização" — três opções, alternáveis
+pelos botões ao lado do "Ordenar", no topo de Agendamentos:
+
+- **Cartões** — o que já existia, cada agendamento em um bloco rico
+- **Em linha** — uma linha compacta por agendamento, só o essencial, pra
+  ver muitos de uma vez
+- **Detalhes** — tabela ao estilo "Detalhes" do Windows Explorer: colunas
+  (Nome, Canal, Categoria, Período, Próximo envio, Status, Criado por,
+  Ações), e clicar no cabeçalho de uma coluna ordena por ela, igual no
+  Explorer
+
+O modo escolhido fica salvo — se você sair e voltar, continua no mesmo
+modo, sem precisar escolher de novo toda vez.
+
+### Como aplicar
+
+```bash
+cd PopAgenda
+git pull
+```
+Reload na aba Web. Sem dependência nova, sem migração de banco.
+
+**Se for manual pelo GitHub**: só `app.py` e `templates/index.html`.
+
+
+
+---
+
+## 🆕 Correção v10.1 — destaque visual no período selecionado
+
+Ao clicar num dos botões de dias (7d, 14d...), o valor era salvo
+corretamente por trás dos panos, mas nenhum botão mudava de aparência —
+sem confirmação visual de qual foi escolhido. Corrigido: o botão clicado
+agora fica destacado (preenchido), e some o destaque do anterior. Testei
+simulando cliques de verdade (não só lendo o código): clicar, trocar de
+botão, ir pro modo "Personalizado" e voltar, e reabrir um agendamento já
+existente (o botão certo já vem marcado).
+
+**Como aplicar**: só `templates/form.html` mudou.
+```bash
+cd PopAgenda
+git pull
+```
+Reload na aba Web.
+
+## 🆕 Atualização v10 — edição completa, cópia entre canais, escopo e filtros
+
+Também não-destrutiva.
+
+### 📝 Formulário de Novo Agendamento — refeito conforme pedido
+
+1. **Rótulo agora é obrigatório**, alinhado com o toggle de Rascunho na
+   mesma linha
+2. **Canal favorito pré-selecionado**, mostrado de forma compacta; pra
+   trocar, o botão **"Usar outro canal salvo"** revela a lista completa
+3. **Período personalizado** agora fica na mesma linha dos botões fixos
+   (7d, 14d...) — clique em "✏️ Personalizado" pra digitar outro valor
+4. **Data de início, fim e horário** juntos numa linha, logo acima da
+   Mensagem
+
+### Editar tudo que é cadastrado
+
+Canais, Categorias e Usuários agora têm botão de **editar** (não só
+criar/apagar). Em Usuários, dá pra editar nome e papel.
+
+### Copiar agendamento entre canais
+
+Botão de copiar (ícone 📋) em qualquer agendamento — cria uma cópia
+apontando pra outro canal, mesma mensagem/período/datas. O emoji não é
+copiado (evita duplicidade); escolha um novo na cópia.
+
+### Ativar/desativar usuário — inclusive outros admins
+
+Em Usuários, além de apagar, agora dá pra **desativar** uma conta sem
+apagar (bloqueia o login, preserva o histórico). Funciona pra qualquer
+conta, inclusive outros administradores — só não a sua própria, e nunca
+a ponto de zerar os admins ativos.
+
+### Dashboard escopado por canal (igual o Calendário)
+
+Por padrão, quem não é admin só vê os agendamentos do **próprio canal**
+(favorito ou principal) na tela de Agendamentos — igual já acontecia no
+Calendário. Admin continua vendo tudo. O filtro de canal permite ver
+outros canais quando necessário — não é uma parede, é só o padrão.
+
+### Filtros
+
+Barra de filtro no topo de Agendamentos: busca por texto (nome, mensagem,
+canal), categoria, status (ativo/pausado/rascunho) e canal — combináveis.
+
+### Categorias mostram quantos agendamentos usam cada uma
+
+Contagem de agendamentos **ativos** ao lado de cada categoria.
+
+### "Detalhes" agora é o padrão
+
+A tela principal abre no modo tabela por padrão (antes era Cartões).
+
+### Como aplicar
+
+```bash
+cd PopAgenda
+git pull
+```
+Reload na aba Web. Sem dependência nova.
+
+**Se for manual pelo GitHub**: `app.py`, e em `templates/`: `base.html`,
+`form.html`, `index.html`, `canais.html`, `categorias.html`,
+`usuarios.html`.
+
+
+
+---
+
 ## O que mudou por baixo do capô (versão GitHub + PythonAnywhere)
 
 - O bot agora usa **webhook** em vez de "polling": o Telegram chama seu app
@@ -352,14 +617,15 @@ processo — ele fica de fora do controle de versão de propósito (veja o
 
 ---
 
-## 📌 Roteiro — o que falta das suas ideias originais
+## ✅ Roteiro — plano original completo, agora com edição e refinamentos
 
-Já entregue: usuários com permissões, contatos, botão de teste, horário do
-envio, precisão com cron-job.org, auditoria, alerta de falha, categorias,
-emoji único, eventos sem data (rascunho).
+Todos os itens originais entregues, mais: edição completa de canais,
+categorias e usuários; cópia de agendamento entre canais; ativar/desativar
+qualquer usuário (inclusive admins); dashboard escopado por canal com
+filtros; contagem de uso por categoria.
 
-Ainda por vir:
+Qualquer ideia nova ou ajuste fino, é só pedir.
 
-1. **Visão de calendário** — panorama do que está agendado
+Qualquer ideia nova ou ajuste fino, é só pedir.
 
 Me avisa quando quiser seguir pra essa.

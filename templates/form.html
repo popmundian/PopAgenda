@@ -148,11 +148,23 @@
 
 {% block scripts %}
 <script>
+function marcarPeriodoAtivo(botaoSelecionado) {
+  document.querySelectorAll('.period-btn').forEach(b => {
+    b.classList.remove('btn-brand');
+    b.classList.add('btn-outline-primary');
+  });
+  if (botaoSelecionado) {
+    botaoSelecionado.classList.remove('btn-outline-primary');
+    botaoSelecionado.classList.add('btn-brand');
+  }
+}
+
 document.querySelectorAll('.period-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.getElementById('period_days').value = btn.dataset.val;
     document.getElementById('period_days').style.display = 'none';
     document.getElementById('btn_personalizado').style.display = 'inline-block';
+    marcarPeriodoAtivo(btn);
   });
 });
 
@@ -162,6 +174,7 @@ function ativarPersonalizado() {
   campo.style.display = 'inline-block';
   campo.value = '';
   campo.focus();
+  marcarPeriodoAtivo(null); // nenhum botão fixo continua marcado — agora é valor manual
 }
 
 function toggleRascunho() {
@@ -189,12 +202,19 @@ function canalSelecionado(sel) {
   }
 }
 
-// Se o período já veio preenchido (ex: reabrindo formulário após erro de validação)
-// com um valor que não é um dos botões fixos, mostra o campo personalizado direto.
+// Estado inicial: se o período já veio preenchido (editando um agendamento
+// existente, ou reabrindo após erro de validação), marca visualmente o
+// botão certo — ou ativa o modo personalizado se o valor não bater com
+// nenhum dos fixos.
 (function () {
   const valorAtual = document.getElementById('period_days').value;
   const valoresFixos = [7,14,21,28,30,56,60,90].map(String);
-  if (valorAtual && !valoresFixos.includes(valorAtual)) {
+  if (valorAtual && valoresFixos.includes(valorAtual)) {
+    const botaoCorrespondente = document.querySelector('.period-btn[data-val="' + valorAtual + '"]');
+    document.getElementById('period_days').style.display = 'none';
+    document.getElementById('btn_personalizado').style.display = 'inline-block';
+    marcarPeriodoAtivo(botaoCorrespondente);
+  } else if (valorAtual) {
     ativarPersonalizado();
   }
 })();
