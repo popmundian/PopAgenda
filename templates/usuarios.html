@@ -25,8 +25,11 @@
           </thead>
           <tbody>
             {% for u in usuarios %}
-            <tr>
-              <td>{{ u.username }}</td>
+            <tr style="{% if not u.active %}opacity:.5{% endif %}">
+              <td>
+                {{ u.username }}
+                {% if not u.active %}<span class="badge bg-secondary ms-1">desativado</span>{% endif %}
+              </td>
               <td>
                 {% if u.role == 'admin' %}
                   <span class="badge bg-primary">admin</span>
@@ -36,21 +39,37 @@
               </td>
               <td><small class="text-muted">{{ u.favorite_chat_id or '—' }}</small></td>
               <td class="text-end">
-                <button type="button" class="btn btn-outline-secondary btn-sm"
+                <button type="button" class="btn btn-outline-secondary btn-sm" title="Editar"
+                        onclick="abrirEdicaoUsuario({{ u.id }}, '{{ u.username }}', '{{ u.role }}')">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" title="Redefinir senha"
                         onclick="abrirReset({{ u.id }}, '{{ u.username }}')">
                   <i class="bi bi-key"></i>
                 </button>
-                <form method="POST" action="{{ url_for('usuarios_remover', uid=u.id) }}" class="d-inline"
-                      onsubmit="return confirm('Remover o usuário {{ u.username }}?')">
-                  <button type="submit" class="btn btn-outline-danger btn-sm">
-                    <i class="bi bi-trash"></i>
+                {% if u.id != session.get('user_id') %}
+                <form method="POST" action="{{ url_for('usuarios_status', uid=u.id) }}" class="d-inline">
+                  <button type="submit" class="btn btn-sm {% if u.active %}btn-outline-warning{% else %}btn-outline-success{% endif %}"
+                          title="{% if u.active %}Desativar{% else %}Reativar{% endif %}">
+                    <i class="bi bi-{% if u.active %}pause{% else %}play{% endif %}"></i>
                   </button>
                 </form>
+                <form method="POST" action="{{ url_for('usuarios_remover', uid=u.id) }}" class="d-inline"
+                      onsubmit="return confirm('Remover o usuário {{ u.username }}?')">
+                  <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i></button>
+                </form>
+                {% endif %}
               </td>
             </tr>
             {% endfor %}
           </tbody>
         </table>
+      </div>
+      <div class="card-body py-2">
+        <div class="form-text mb-0">
+          <i class="bi bi-info-circle me-1"></i><strong>Desativar</strong> bloqueia o login sem apagar
+          nada — funciona pra qualquer conta, inclusive outros admins (menos a sua própria).
+        </div>
       </div>
     </div>
   </div>
@@ -116,6 +135,36 @@
     </div>
   </div>
 </div>
+
+<div class="modal fade" id="editUserModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" id="editUserForm">
+        <div class="modal-header">
+          <h5 class="modal-title">Editar usuário</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Nome de usuário</label>
+            <input type="text" name="username" id="edit_user_nome" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Papel</label>
+            <select name="role" id="edit_user_role" class="form-select">
+              <option value="user">Usuário</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-brand">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -124,6 +173,12 @@ function abrirReset(id, username) {
   document.getElementById('resetForm').action = '/usuarios/resetar/' + id;
   document.getElementById('resetUserLabel').textContent = username;
   new bootstrap.Modal(document.getElementById('resetModal')).show();
+}
+function abrirEdicaoUsuario(id, username, role) {
+  document.getElementById('editUserForm').action = '/usuarios/editar/' + id;
+  document.getElementById('edit_user_nome').value = username;
+  document.getElementById('edit_user_role').value = role;
+  new bootstrap.Modal(document.getElementById('editUserModal')).show();
 }
 </script>
 {% endblock %}

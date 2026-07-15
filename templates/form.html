@@ -19,8 +19,9 @@
     <div class="card-body p-4">
       <form method="POST">
 
-        <div class="d-flex align-items-center justify-content-between mb-1">
-          <label class="form-label mb-0">Rótulo <span class="text-muted fw-normal">(opcional)</span></label>
+        <!-- ① Rótulo (obrigatório) alinhado com o toggle de Rascunho -->
+        <div class="d-flex align-items-center justify-content-between gap-3 mb-1">
+          <label class="form-label mb-0">Rótulo <span class="text-danger">*</span></label>
           <div class="d-flex align-items-center gap-2">
             <label class="small text-muted mb-0" for="is_draft" style="font-size:.78rem">
               📝 Rascunho — salvar sem data definida
@@ -31,42 +32,48 @@
             </div>
           </div>
         </div>
-        <input type="text" name="label" class="form-control mb-3"
+        <input type="text" name="label" class="form-control mb-3" required
                placeholder="ex: reuniao_semanal" value="{{ data.get('label', '') }}">
 
+        <!-- ② Canal — favorito pré-selecionado, colapsado; expande pra trocar -->
         <label class="form-label">Canal de comunicação <span class="text-danger">*</span></label>
         {% if action != 'editar' %}
-        <div class="d-flex align-items-center gap-2 mb-2">
-          <select id="contact_picker" class="form-select flex-grow-1"
-                  onchange="document.getElementById('chat_id').value = this.value">
+          {% if data.get('chat_id') %}
+          <div id="canal_resumo" class="d-flex align-items-center justify-content-between p-2 rounded mb-2"
+               style="background:var(--surface-sunken); border:1px solid var(--border)">
+            <span style="font-size:.86rem">
+              <i class="bi bi-broadcast me-1 text-primary"></i>
+              <strong id="canal_nome_label">{{ contacts_map_nome.get(data.get('chat_id'), data.get('chat_id')) }}</strong>
+            </span>
+            <button type="button" class="btn btn-sm btn-link text-decoration-none p-0" onclick="usarOutroCanal()">
+              Usar outro canal salvo
+            </button>
+          </div>
+          {% endif %}
+          <select id="contact_picker" class="form-select mb-2" {% if data.get('chat_id') %}style="display:none"{% endif %}
+                  onchange="canalSelecionado(this)">
             <option value="">— escolher um canal salvo —</option>
             {% for c in contacts %}
-            <option value="{{ c.chat_id }}" {% if data.get('chat_id') == c.chat_id %}selected{% endif %}>
+            <option value="{{ c.chat_id }}" data-nome="{{ c.friendly_name }}"
+                    {% if data.get('chat_id') == c.chat_id %}selected{% endif %}>
               {% if c.is_principal %}⭐ {% endif %}{{ c.friendly_name }} ({{ c.chat_id }})
             </option>
             {% endfor %}
+            <option value="__novo__">✏️ Digitar um Chat ID novo…</option>
           </select>
-          <div class="d-flex align-items-center gap-1 flex-shrink-0" style="font-size:.76rem">
-            <div class="form-check form-switch mb-0">
-              <input class="form-check-input" type="checkbox" id="canal_manual_toggle" role="switch"
-                     onchange="toggleCanalManual()">
-            </div>
-            <span class="text-muted text-nowrap">Selecione outro canal</span>
-          </div>
-        </div>
-        <input type="text" name="chat_id" id="chat_id" class="form-control font-mono mb-3" style="display:none"
-               placeholder="Cole o Chat ID: -1001234567890" value="{{ data.get('chat_id', '') }}">
-        {% else %}
-        <input type="text" name="chat_id" id="chat_id" class="form-control font-mono mb-3"
-               value="{{ data.get('chat_id', '') }}" readonly>
-        {% endif %}
-        <div class="form-text mb-3" style="margin-top:-.6rem">
-          {% if action != 'editar' %}
+          <input type="text" id="chat_id_manual" class="form-control font-mono mb-2" style="display:none"
+                 placeholder="Cole o Chat ID: -1001234567890" oninput="document.getElementById('chat_id').value=this.value">
+          <input type="hidden" name="chat_id" id="chat_id" value="{{ data.get('chat_id', '') }}">
+          <div class="form-text mb-3" style="margin-top:-.4rem">
             Sem o ID ainda? Envie <code>/chatid</code> no canal, ou cadastre em
             <a href="{{ url_for('canais') }}" target="_blank">Canais</a>.
-          {% endif %}
-        </div>
+          </div>
+        {% else %}
+          <input type="text" name="chat_id" id="chat_id" class="form-control font-mono mb-3"
+                 value="{{ data.get('chat_id', '') }}" readonly>
+        {% endif %}
 
+        <!-- Categoria + Emoji -->
         <div class="d-flex gap-3 mb-3">
           <div class="flex-grow-1">
             <label class="form-label">Categoria <span class="text-muted fw-normal">(opcional)</span></label>
@@ -87,17 +94,23 @@
         </div>
 
         <div id="camposComData">
+          <!-- ③ Período — botões fixos + "Personalizado" NA MESMA LINHA -->
           <label class="form-label">Período de repetição, em dias <span class="text-danger">*</span></label>
           <div class="d-flex gap-2 flex-wrap align-items-center mb-3">
             {% for p in [7, 14, 21, 28, 30, 56, 60, 90] %}
             <button type="button" class="btn btn-outline-primary btn-sm period-btn py-1 px-2"
                     style="font-size:.76rem" data-val="{{ p }}">{{ p }}d</button>
             {% endfor %}
-            <input type="number" name="period_days" id="period_days" class="form-control flex-grow-1"
-                   style="min-width:110px;max-width:160px" placeholder="Outro nº de dias" min="1"
+            <button type="button" class="btn btn-outline-secondary btn-sm py-1 px-2" id="btn_personalizado"
+                    style="font-size:.76rem" onclick="ativarPersonalizado()">
+              ✏️ Personalizado
+            </button>
+            <input type="number" name="period_days" id="period_days" class="form-control"
+                   style="display:none;width:110px" placeholder="nº de dias" min="1"
                    value="{{ data.get('period_days', '') }}">
           </div>
 
+          <!-- ④ Data início / fim / horário — juntos, logo acima da Mensagem -->
           <div class="row g-3 mb-3">
             <div class="col-sm-4">
               <label class="form-label">Data de início <span class="text-danger">*</span></label>
@@ -136,8 +149,20 @@
 {% block scripts %}
 <script>
 document.querySelectorAll('.period-btn').forEach(btn => {
-  btn.addEventListener('click', () => { document.getElementById('period_days').value = btn.dataset.val; });
+  btn.addEventListener('click', () => {
+    document.getElementById('period_days').value = btn.dataset.val;
+    document.getElementById('period_days').style.display = 'none';
+    document.getElementById('btn_personalizado').style.display = 'inline-block';
+  });
 });
+
+function ativarPersonalizado() {
+  document.getElementById('btn_personalizado').style.display = 'none';
+  const campo = document.getElementById('period_days');
+  campo.style.display = 'inline-block';
+  campo.value = '';
+  campo.focus();
+}
 
 function toggleRascunho() {
   const checked = document.getElementById('is_draft').checked;
@@ -147,20 +172,31 @@ function toggleRascunho() {
 }
 toggleRascunho();
 
-function toggleCanalManual() {
-  const manual = document.getElementById('canal_manual_toggle');
-  const picker = document.getElementById('contact_picker');
-  const input  = document.getElementById('chat_id');
-  if (!manual) return;
-  if (manual.checked) {
-    picker.style.display = 'none';
-    input.style.display = 'block';
-    input.value = '';
-    input.focus();
+function usarOutroCanal() {
+  document.getElementById('canal_resumo').style.display = 'none';
+  document.getElementById('contact_picker').style.display = 'block';
+}
+
+function canalSelecionado(sel) {
+  const valor = sel.value;
+  if (valor === '__novo__') {
+    document.getElementById('chat_id_manual').style.display = 'block';
+    document.getElementById('chat_id_manual').focus();
+    document.getElementById('chat_id').value = '';
   } else {
-    picker.style.display = 'block';
-    input.style.display = 'none';
+    document.getElementById('chat_id_manual').style.display = 'none';
+    document.getElementById('chat_id').value = valor;
   }
 }
+
+// Se o período já veio preenchido (ex: reabrindo formulário após erro de validação)
+// com um valor que não é um dos botões fixos, mostra o campo personalizado direto.
+(function () {
+  const valorAtual = document.getElementById('period_days').value;
+  const valoresFixos = [7,14,21,28,30,56,60,90].map(String);
+  if (valorAtual && !valoresFixos.includes(valorAtual)) {
+    ativarPersonalizado();
+  }
+})();
 </script>
 {% endblock %}

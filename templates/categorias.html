@@ -22,20 +22,32 @@
         <p class="mt-2 mb-0 small">Nenhuma categoria cadastrada ainda.</p>
       </div>
       {% else %}
-      <div class="d-flex flex-wrap gap-2 mb-4">
+      <div class="d-flex flex-column gap-2 mb-4">
         {% for c in categorias %}
-        <div class="d-inline-flex align-items-center gap-2 rounded-pill"
-             style="background:{{ c.color }}18; border:1.5px solid {{ c.color }}; padding:.35rem .4rem .35rem .85rem">
-          <span class="fw-semibold" style="color:{{ c.color }}; font-size:.83rem">{{ c.name }}</span>
+        <div class="d-flex align-items-center justify-content-between rounded-3 px-3 py-2"
+             style="background:{{ c.color }}0d; border:1.5px solid {{ c.color }}">
+          <div class="d-flex align-items-center gap-2">
+            <span class="fw-semibold" style="color:{{ c.color }}; font-size:.86rem">{{ c.name }}</span>
+            <span class="badge" style="background:{{ c.color }}22; color:{{ c.color }}; font-size:.68rem">
+              {{ c.uso }} agendamento{{ 's' if c.uso != 1 else '' }} ativo{{ 's' if c.uso != 1 else '' }}
+            </span>
+          </div>
           {% if is_admin %}
-          <form method="POST" action="{{ url_for('categorias_remover', cid=c.id) }}" class="d-inline mb-0"
-                onsubmit="return confirm('Remover a categoria {{ c.name }}? Agendamentos que a usam ficarão sem categoria.')">
-            <button type="submit" class="btn btn-sm p-0 d-flex align-items-center justify-content-center"
-                    style="width:20px;height:20px;border-radius:50%;background:{{ c.color }}25;border:none;color:{{ c.color }}"
-                    title="Remover">
-              <i class="bi bi-x" style="font-size:.9rem"></i>
+          <div class="d-flex gap-1">
+            <button type="button" class="btn btn-sm p-0 d-flex align-items-center justify-content-center"
+                    style="width:24px;height:24px;border-radius:50%;background:{{ c.color }}22;border:none;color:{{ c.color }}"
+                    title="Editar" onclick="abrirEdicaoCategoria({{ c.id }}, '{{ c.name }}', '{{ c.color }}')">
+              <i class="bi bi-pencil" style="font-size:.75rem"></i>
             </button>
-          </form>
+            <form method="POST" action="{{ url_for('categorias_remover', cid=c.id) }}" class="d-inline mb-0"
+                  onsubmit="return confirm('Remover a categoria {{ c.name }}? Agendamentos que a usam ficarão sem categoria.')">
+              <button type="submit" class="btn btn-sm p-0 d-flex align-items-center justify-content-center"
+                      style="width:24px;height:24px;border-radius:50%;background:{{ c.color }}22;border:none;color:{{ c.color }}"
+                      title="Remover">
+                <i class="bi bi-x-lg" style="font-size:.7rem"></i>
+              </button>
+            </form>
+          </div>
           {% endif %}
         </div>
         {% endfor %}
@@ -57,4 +69,39 @@
     </div>
   </div>
 </div>
+
+{% if is_admin %}
+<div class="modal fade" id="editCategoriaModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" id="editCategoriaForm">
+        <div class="modal-header">
+          <h5 class="modal-title">Editar categoria</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body d-flex gap-2 align-items-end">
+          <input type="color" name="color" id="edit_cat_color" class="form-control form-control-color flex-shrink-0"
+                 style="width:44px;height:38px;padding:3px">
+          <input type="text" name="name" id="edit_cat_nome" class="form-control" required>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-brand">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function abrirEdicaoCategoria(id, nome, cor) {
+  document.getElementById('editCategoriaForm').action = '/categorias/editar/' + id;
+  document.getElementById('edit_cat_nome').value = nome;
+  document.getElementById('edit_cat_color').value = cor;
+  new bootstrap.Modal(document.getElementById('editCategoriaModal')).show();
+}
+</script>
 {% endblock %}

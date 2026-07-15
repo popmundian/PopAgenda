@@ -43,6 +43,10 @@
           </div>
           {% if is_admin %}
           <div class="d-flex gap-1 flex-shrink-0">
+            <button type="button" class="btn btn-outline-secondary btn-sm" title="Editar"
+                    onclick="abrirEdicaoCanal({{ c.id }}, '{{ c.friendly_name }}', '{{ c.chat_id }}')">
+              <i class="bi bi-pencil"></i>
+            </button>
             <form method="POST" action="{{ url_for('canais_principal', cid=c.id) }}" class="d-inline">
               <button type="submit" class="btn btn-sm {% if c.is_principal %}btn-warning{% else %}btn-outline-secondary{% endif %}"
                       title="{% if c.is_principal %}Desmarcar como principal{% else %}Marcar como principal{% endif %}">
@@ -85,4 +89,44 @@
   </div>
 
 </div>
+
+{% if is_admin %}
+<div class="modal fade" id="editCanalModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" id="editCanalForm">
+        <div class="modal-header">
+          <h5 class="modal-title">Editar canal</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Nome</label>
+            <input type="text" name="friendly_name" id="edit_canal_nome" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Chat ID</label>
+            <input type="text" name="chat_id" id="edit_canal_chatid" class="form-control font-mono" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-brand">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function abrirEdicaoCanal(id, nome, chatId) {
+  document.getElementById('editCanalForm').action = '/canais/editar/' + id;
+  document.getElementById('edit_canal_nome').value = nome;
+  document.getElementById('edit_canal_chatid').value = chatId;
+  new bootstrap.Modal(document.getElementById('editCanalModal')).show();
+}
+</script>
 {% endblock %}

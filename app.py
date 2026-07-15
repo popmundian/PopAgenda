@@ -161,6 +161,11 @@ def init_db():
             conn.commit()
             logger.info("Migração aplicada: coluna is_principal adicionada.")
 
+        if "active" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+            conn.commit()
+            logger.info("Migração aplicada: coluna active (usuários) adicionada.")
+
         # Semeia a primeira conta admin — só roda se AINDA não existir
         # nenhum usuário na tabela (ou seja, só na primeira execução).
         existing = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
@@ -365,10 +370,25 @@ def registrar_auditoria(action: str, details: str = "", actor: str = None):
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
+def _conta_ainda_ativa() -> bool:
+    """Confere se a conta da sessão atual ainda está ativa — pega o caso de
+    alguém desativar um usuário que já está logado em outra aba/dispositivo."""
+    uid = session.get("user_id")
+    if uid is None:
+        return False
+    with get_conn() as conn:
+        row = conn.execute("SELECT active FROM users WHERE id=?", (uid,)).fetchone()
+    return bool(row and row["active"])
+
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        if not _conta_ainda_ativa():
+            session.clear()
+            flash("Sua conta foi desativada.", "danger")
             return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorated
@@ -378,6 +398,10 @@ def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        if not _conta_ainda_ativa():
+            session.clear()
+            flash("Sua conta foi desativada.", "danger")
             return redirect(url_for("login"))
         if session.get("role") != "admin":
             flash("Essa ação é restrita ao administrador.", "danger")
@@ -393,7 +417,10 @@ def login():
         p = request.form.get("password", "")
         with get_conn() as conn:
             row = conn.execute("SELECT * FROM users WHERE username=?", (u,)).fetchone()
-        if row and check_password_hash(row["password_hash"], p):
+        if row and not row["active"]:
+            registrar_auditoria("login_bloqueado", "conta desativada", actor=u)
+            flash("Esta conta está desativada. Fale com o administrador.", "danger")
+        elif row and check_password_hash(row["password_hash"], p):
             session["logged_in"] = True
             session["user_id"]   = row["id"]
             session["username"]  = row["username"]
@@ -456,7 +483,9 @@ def minha_conta():
 @admin_required
 def usuarios():
     with get_conn() as conn:
-        rows = conn.execute("SELECT id, username, role, favorite_chat_id, created_at FROM users ORDER BY id").fetchall()
+        rows = conn.execute(
+            "SELECT id, username, role, favorite_chat_id, active, created_at FROM users ORDER BY id"
+        ).fetchall()
         canais = conn.execute("SELECT * FROM contacts ORDER BY friendly_name").fetchall()
     return render_template("usuarios.html", usuarios=rows, canais=canais,
                            user=session.get("username"), is_admin=True)
@@ -504,6 +533,35 @@ def usuarios_resetar(uid):
     return redirect(url_for("usuarios"))
 
 
+@app.route("/usuarios/editar/<int:uid>", methods=["POST"])
+@admin_required
+def usuarios_editar(uid):
+    novo_username = request.form.get("username", "").strip()
+    novo_role     = request.form.get("role", "user")
+    if novo_role not in ("admin", "user"):
+        novo_role = "user"
+    if not novo_username:
+        flash("Informe um nome de usuário.", "danger")
+        return redirect(url_for("usuarios"))
+    with get_conn() as conn:
+        atual = conn.execute("SELECT role FROM users WHERE id=?", (uid,)).fetchone()
+        if atual and atual["role"] == "admin" and novo_role == "user":
+            admins_ativos = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE role='admin' AND active=1"
+            ).fetchone()[0]
+            if admins_ativos <= 1:
+                flash("Não é possível rebaixar o último administrador ativo.", "danger")
+                return redirect(url_for("usuarios"))
+        try:
+            conn.execute("UPDATE users SET username=?, role=? WHERE id=?", (novo_username, novo_role, uid))
+            conn.commit()
+            registrar_auditoria("editar_usuario", f"id={uid} -> '{novo_username}' ({novo_role})")
+            flash("Usuário atualizado! ✅", "success")
+        except sqlite3.IntegrityError:
+            flash("Já existe outro usuário com esse nome.", "danger")
+    return redirect(url_for("usuarios"))
+
+
 @app.route("/usuarios/remover/<int:uid>", methods=["POST"])
 @admin_required
 def usuarios_remover(uid):
@@ -513,14 +571,45 @@ def usuarios_remover(uid):
     with get_conn() as conn:
         row = conn.execute("SELECT role, username FROM users WHERE id=?", (uid,)).fetchone()
         if row and row["role"] == "admin":
-            total_admins = conn.execute("SELECT COUNT(*) FROM users WHERE role='admin'").fetchone()[0]
-            if total_admins <= 1:
-                flash("Não é possível remover o último administrador.", "danger")
+            admins_ativos = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE role='admin' AND active=1"
+            ).fetchone()[0]
+            if admins_ativos <= 1:
+                flash("Não é possível remover o último administrador ativo.", "danger")
                 return redirect(url_for("usuarios"))
         conn.execute("DELETE FROM users WHERE id=?", (uid,))
         conn.commit()
     registrar_auditoria("remover_usuario", f"'{row['username'] if row else uid}' removido")
     flash("Usuário removido.", "warning")
+    return redirect(url_for("usuarios"))
+
+
+@app.route("/usuarios/status/<int:uid>", methods=["POST"])
+@admin_required
+def usuarios_status(uid):
+    """Ativa/desativa QUALQUER conta, inclusive de outros admins — só não a
+    própria, e nunca a ponto de zerar os admins ativos (senão ninguém mais
+    consegue gerenciar usuários)."""
+    if uid == session.get("user_id"):
+        flash("Você não pode desativar a própria conta.", "danger")
+        return redirect(url_for("usuarios"))
+    with get_conn() as conn:
+        row = conn.execute("SELECT role, username, active FROM users WHERE id=?", (uid,)).fetchone()
+        if not row:
+            flash("Usuário não encontrado.", "danger")
+            return redirect(url_for("usuarios"))
+        if row["active"] and row["role"] == "admin":
+            admins_ativos = conn.execute(
+                "SELECT COUNT(*) FROM users WHERE role='admin' AND active=1"
+            ).fetchone()[0]
+            if admins_ativos <= 1:
+                flash("Não é possível desativar o último administrador ativo.", "danger")
+                return redirect(url_for("usuarios"))
+        novo_estado = 0 if row["active"] else 1
+        conn.execute("UPDATE users SET active=? WHERE id=?", (novo_estado, uid))
+        conn.commit()
+    registrar_auditoria("alterar_status_usuario", f"'{row['username']}' -> {'ativo' if novo_estado else 'desativado'}")
+    flash(f"'{row['username']}' {'reativado ✅' if novo_estado else 'desativado ⏸'}.", "info")
     return redirect(url_for("usuarios"))
 
 
@@ -635,6 +724,25 @@ def canais_novo():
     return redirect(url_for("canais"))
 
 
+@app.route("/canais/editar/<int:cid>", methods=["POST"])
+@admin_required
+def canais_editar(cid):
+    nome    = request.form.get("friendly_name", "").strip()
+    chat_id = request.form.get("chat_id", "").strip()
+    if not nome or not chat_id:
+        flash("Preencha o nome e o Chat ID.", "danger")
+        return redirect(url_for("canais"))
+    try:
+        with get_conn() as conn:
+            conn.execute("UPDATE contacts SET friendly_name=?, chat_id=? WHERE id=?", (nome, chat_id, cid))
+            conn.commit()
+        registrar_auditoria("editar_canal", f"id={cid} -> '{nome}' ({chat_id})")
+        flash(f"Canal atualizado! ✅", "success")
+    except sqlite3.IntegrityError:
+        flash("Já existe outro canal com esse Chat ID.", "danger")
+    return redirect(url_for("canais"))
+
+
 @app.route("/canais/remover/<int:cid>", methods=["POST"])
 @admin_required
 def canais_remover(cid):
@@ -679,8 +787,38 @@ def canais_principal(cid):
 def categorias():
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
-    return render_template("categorias.html", categorias=rows, user=session.get("username"),
+        contagens = conn.execute("""
+            SELECT category_id, COUNT(*) as total FROM schedules
+            WHERE active=1 AND is_draft=0 AND category_id IS NOT NULL
+            GROUP BY category_id
+        """).fetchall()
+    mapa_contagem = {c["category_id"]: c["total"] for c in contagens}
+    categorias_com_uso = []
+    for r in rows:
+        d = dict(r)
+        d["uso"] = mapa_contagem.get(r["id"], 0)
+        categorias_com_uso.append(d)
+    return render_template("categorias.html", categorias=categorias_com_uso, user=session.get("username"),
                            is_admin=(session.get("role") == "admin"))
+
+
+@app.route("/categorias/editar/<int:cid>", methods=["POST"])
+@admin_required
+def categorias_editar(cid):
+    nome = request.form.get("name", "").strip()
+    cor  = request.form.get("color", "#229ED9").strip() or "#229ED9"
+    if not nome:
+        flash("Informe um nome para a categoria.", "danger")
+        return redirect(url_for("categorias"))
+    try:
+        with get_conn() as conn:
+            conn.execute("UPDATE categories SET name=?, color=? WHERE id=?", (nome, cor, cid))
+            conn.commit()
+        registrar_auditoria("editar_categoria", f"id={cid} -> '{nome}'")
+        flash("Categoria atualizada! ✅", "success")
+    except sqlite3.IntegrityError:
+        flash("Já existe outra categoria com esse nome.", "danger")
+    return redirect(url_for("categorias"))
 
 
 @app.route("/categorias/novo", methods=["POST"])
@@ -727,11 +865,25 @@ def index():
     if view in ("cards", "inline", "details"):
         session["view_mode"] = view
     else:
-        view = session.get("view_mode", "cards")
+        view = session.get("view_mode", "details")
+
+    is_admin = session.get("role") == "admin"
+    meu_canal_padrao = None if is_admin else canal_padrao_do_usuario(session["user_id"])
+
+    # Por padrão, quem não é admin só vê o próprio canal (igual ao calendário)
+    # — mas pode explicitamente escolher "Todos" ou outro canal no filtro.
+    if "canal" in request.args:
+        filtro_canal = request.args.get("canal", "")
+    else:
+        filtro_canal = meu_canal_padrao or ""
+    filtro_categoria = request.args.get("categoria", "")
+    filtro_status    = request.args.get("status", "")
+    busca            = request.args.get("q", "").strip().lower()
 
     with get_conn() as conn:
         rows = conn.execute("SELECT * FROM schedules ORDER BY active DESC, id DESC").fetchall()
         categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
+        canais_todos = conn.execute("SELECT * FROM contacts ORDER BY is_principal DESC, friendly_name").fetchall()
     contacts_map   = get_contacts_map()
     categories_map = get_categories_map()
     schedules = []
@@ -739,6 +891,25 @@ def index():
         s = enrich(r, categories_map)
         s["friendly_name"] = contacts_map.get(s["chat_id"])
         schedules.append(s)
+
+    def passa_filtro(s):
+        if filtro_canal and s["chat_id"] != filtro_canal:
+            return False
+        if filtro_categoria and str(s.get("category_id") or "") != filtro_categoria:
+            return False
+        if filtro_status == "rascunho" and not s["is_draft"]:
+            return False
+        if filtro_status == "ativo" and (s["is_draft"] or not s["active"]):
+            return False
+        if filtro_status == "pausado" and (s["is_draft"] or s["active"]):
+            return False
+        if busca:
+            alvo = f"{s['label']} {s['message']} {s.get('friendly_name') or ''} {s['chat_id']}".lower()
+            if busca not in alvo:
+                return False
+        return True
+
+    schedules = [s for s in schedules if passa_filtro(s)]
 
     # Rascunhos sempre por último dentro de cada critério de ordenação —
     # não tem data pra comparar, então não faz sentido competir por posição.
@@ -751,9 +922,13 @@ def index():
     else:
         schedules.sort(key=lambda s: (s["is_draft"], s["next_date"] or "9999-99-99"))
 
-    return render_template("index.html", schedules=schedules, categories=categories,
-                           sort=sort, view=view, user=session.get("username"),
-                           is_admin=(session.get("role") == "admin"))
+    return render_template(
+        "index.html", schedules=schedules, categories=categories, canais_todos=canais_todos,
+        sort=sort, view=view, filtro_canal=filtro_canal, filtro_categoria=filtro_categoria,
+        filtro_status=filtro_status, busca=request.args.get("q", ""),
+        meu_canal_padrao=meu_canal_padrao,
+        user=session.get("username"), is_admin=is_admin,
+    )
 
 
 @app.route("/novo", methods=["GET", "POST"])
@@ -763,6 +938,7 @@ def novo():
         contacts   = conn.execute("SELECT * FROM contacts ORDER BY is_principal DESC, friendly_name").fetchall()
         categories = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
     meu_canal_padrao = canal_padrao_do_usuario(session["user_id"])
+    contacts_map_nome = get_contacts_map()
 
     if request.method == "POST":
         label       = request.form.get("label", "").strip()
@@ -777,6 +953,8 @@ def novo():
         message     = request.form.get("message", "").strip()
 
         errors = []
+        if not label:
+            errors.append("O rótulo (nome do agendamento) é obrigatório.")
         if not chat_id:
             errors.append("Informe o Chat ID do grupo.")
         if not message:
@@ -805,7 +983,7 @@ def novo():
             for e in errors:
                 flash(e, "danger")
             return render_template("form.html", action="novo", data=request.form,
-                                   contacts=contacts, categories=categories,
+                                   contacts=contacts, categories=categories, contacts_map_nome=contacts_map_nome,
                                    user=session.get("username"), is_admin=(session.get("role") == "admin"))
 
         with get_conn() as conn:
@@ -829,7 +1007,7 @@ def novo():
         return redirect(url_for("index"))
 
     return render_template("form.html", action="novo", data={"chat_id": meu_canal_padrao or ""},
-                           contacts=contacts, categories=categories,
+                           contacts=contacts, categories=categories, contacts_map_nome=contacts_map_nome,
                            user=session.get("username"), is_admin=(session.get("role") == "admin"))
 
 
@@ -856,6 +1034,8 @@ def editar(sid):
         message     = request.form.get("message", "").strip()
 
         errors = []
+        if not label:
+            errors.append("O rótulo (nome do agendamento) é obrigatório.")
         if not message:
             errors.append("A mensagem não pode ser vazia.")
 
@@ -951,6 +1131,42 @@ def testar_envio(sid):
         flash(f"Mensagem de teste enviada! Confira o grupo/canal. ✅", "success")
     else:
         flash(f"Falha ao enviar teste: {detail}", "danger")
+    return redirect(url_for("index"))
+
+
+@app.route("/copiar/<int:sid>", methods=["POST"])
+@login_required
+def copiar_agendamento(sid):
+    novo_chat_id = request.form.get("chat_id", "").strip()
+    if not novo_chat_id:
+        flash("Escolha o canal de destino da cópia.", "danger")
+        return redirect(url_for("index"))
+
+    with get_conn() as conn:
+        r = conn.execute("SELECT * FROM schedules WHERE id=?", (sid,)).fetchone()
+    if not r:
+        flash("Agendamento não encontrado.", "danger")
+        return redirect(url_for("index"))
+
+    novo_label = f"{r['label']} (cópia)" if r["label"] else ""
+    with get_conn() as conn:
+        cur = conn.execute("""
+            INSERT INTO schedules
+              (chat_id, label, message, period_days, start_date, end_date, send_time,
+               category_id, emoji, is_draft, created_by, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            novo_chat_id, novo_label, r["message"], r["period_days"], r["start_date"],
+            r["end_date"], r["send_time"], r["category_id"], None, r["is_draft"],
+            session.get("username"), datetime.now(TZ).isoformat(),
+        ))
+        conn.commit()
+    registrar_auditoria("copiar_agendamento", f"#{sid} -> novo #{cur.lastrowid} (canal {novo_chat_id})")
+    flash(
+        f"Copiado para o novo canal como agendamento #{cur.lastrowid}! "
+        "Não esqueça de escolher um emoji (o original não foi copiado, pra evitar duplicidade). ✅",
+        "success"
+    )
     return redirect(url_for("index"))
 
 
